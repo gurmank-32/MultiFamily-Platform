@@ -24,20 +24,52 @@ def initialize_system():
         skipped = 0
         
         for _, row in df.iterrows():
-            url = str(row.get("URL", "")).strip()
-            source_name = str(row.get("Source Name", "")).strip()
+            # Support new format: category, city_name, law_name, hyperlink
+            if "hyperlink" in df.columns or "hyperlink" in str(row).lower():
+                url = str(row.get("hyperlink", row.get("URL", ""))).strip()
+                law_name = str(row.get("law_name", "")).strip()
+                category = str(row.get("category", "")).strip()
+                city_name = str(row.get("city_name", "Texas-Statewide")).strip()
+                
+                # Use law_name as source_name, or construct from category and city
+                if law_name:
+                    source_name = law_name
+                else:
+                    source_name = f"{category} - {city_name}"
+                
+                # Determine type from category
+                if category.lower() == "federal":
+                    reg_type = "Federal"
+                elif category.lower() == "state":
+                    reg_type = "State"
+                elif category.lower() == "city":
+                    reg_type = "City"
+                else:
+                    reg_type = "Other"
+            else:
+                # Old format: Source Name, URL, Type, Regulation Category
+                url = str(row.get("URL", "")).strip()
+                source_name = str(row.get("Source Name", "")).strip()
+                reg_type = str(row.get("Type", "")).strip()
+                category = str(row.get("Regulation Category", "Other")).strip()
+                city_name = "Texas-Statewide"
             
-            # Skip invalid URLs
-            if not url or not url.startswith(('http://', 'https://')):
+            # Skip invalid URLs (allow http, https, and file paths)
+            import os
+            if not url or (not url.startswith(('http://', 'https://', 'file://')) and not os.path.exists(url)):
                 skipped += 1
                 continue
+            
+            # Add city to category if it's city-specific
+            if city_name and city_name != "Texas-Statewide":
+                category = f"{category} - {city_name}"
             
             # Add to database
             db.add_regulation(
                 source_name=source_name,
                 url=url,
-                type=str(row.get("Type", "")).strip(),
-                category=str(row.get("Regulation Category", "Other")).strip()
+                type=reg_type,
+                category=category
             )
             loaded += 1
         

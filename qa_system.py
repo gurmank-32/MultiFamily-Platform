@@ -107,45 +107,37 @@ class QASystem:
         return {"is_valid": True, "message": ""}
     
     def _check_relevance(self, question: str) -> Dict:
-        """Check if question is relevant to housing, leasing, regulations, Texas, apartments, compliance"""
+        """Check if question is within allowed scope - STRICT validation"""
         question_lower = question.lower()
         
-        # Relevant keywords
-        relevant_keywords = [
-            # Housing/leasing terms
-            "lease", "leasing", "rent", "rental", "tenant", "landlord", "property", "apartment", 
-            "housing", "residential", "dwelling", "unit", "accommodation",
-            # Legal/regulatory terms
-            "law", "regulation", "ordinance", "statute", "code", "compliance", "compliant",
-            "policy", "policies", "rule", "rules", "requirement", "requirements",
-            # Texas/city specific
-            "texas", "dallas", "houston", "austin", "san antonio",
-            # Compliance/legal concepts
-            "esa", "emotional support", "fair housing", "discrimination", "zoning",
-            "deposit", "fee", "eviction", "notice", "agreement", "contract",
+        # ALLOWED topics only (as per requirements)
+        allowed_topics = [
+            # Core topics
+            "hud", "doj", "esa", "emotional support", "rent control", "zoning",
+            "section 8", "hcv", "housing choice voucher",
+            "leasing manager", "lease", "leasing",
+            # Regulations
+            "regulation", "law", "rule", "requirement", "compliance", "compliant",
+            # Cities
+            "dallas", "houston", "austin", "san antonio", "texas",
             # Related terms
-            "pet", "animal", "service animal", "disability", "reasonable accommodation",
-            "rent control", "rent increase", "security deposit", "maintenance", "repair"
+            "fair housing", "tenant", "landlord", "property", "housing"
         ]
         
-        # Check if question contains any relevant keywords
-        has_relevant_keyword = any(keyword in question_lower for keyword in relevant_keywords)
+        # Check if question contains allowed topics
+        has_allowed_topic = any(topic in question_lower for topic in allowed_topics)
         
-        # Allow greetings and basic questions
-        greetings = ["hi", "hey", "hello", "whats up", "what's up", "howdy", "help"]
+        # Allow greetings
+        greetings = ["hi", "hey", "hello", "whats up", "what's up", "howdy"]
         is_greeting = any(greeting in question_lower for greeting in greetings) and len(question.split()) <= 3
         
-        # Allow questions about the system itself
-        system_questions = ["what can you", "what do you", "how can you", "what are you", "who are you"]
-        is_system_question = any(phrase in question_lower for phrase in system_questions)
-        
-        if has_relevant_keyword or is_greeting or is_system_question:
+        if has_allowed_topic or is_greeting:
             return {"is_relevant": True, "message": ""}
         
-        # Question is not relevant
+        # Question is OUT OF SCOPE
         return {
             "is_relevant": False,
-            "message": "I'm sorry, but your question doesn't seem to be related to housing regulations, leasing, compliance, or Texas property laws. I'm specialized in helping with:\n\n• Texas housing and leasing regulations\n• Compliance requirements for rental properties\n• ESA (Emotional Support Animal) laws\n• Rent control and tenant rights\n• City-specific regulations (Dallas, Houston, Austin, San Antonio)\n• Lease document compliance checking\n\nPlease ask a question related to these topics so I can assist you."
+            "message": "I can only answer questions about:\n\n• HUD, DOJ, ESA\n• Rent control and zoning\n• Section 8 / HCV (Texas)\n• Leasing manager duties (Texas)\n• Federal, Texas state, and city (Dallas, Austin, Houston, San Antonio) housing regulations\n• Lease compliance checking\n\nPlease ask a question related to these topics."
         }
     
     def answer_question(self, question: str, city: str = None) -> Dict:
@@ -188,6 +180,18 @@ class QASystem:
             "Texas-Statewide": ["texas", "statewide", "state-wide"]
         }
         
+        # Check for unsupported cities in Texas
+        unsupported_texas_cities = ["fort worth", "el paso", "arlington", "corpus christi", "plano", "laredo", "lubbock", "garland", "irving", "amarillo", "grand prairie", "brownsville", "mckinney", "frisco", "pasadena", "killeen", "mesquite", "mcallen", "carrollton", "midland", "denton", "abilene", "round rock", "odessa", "waco", "beaumont", "richardson", "lewisville", "tyler", "pearland"]
+        
+        for unsupported_city in unsupported_texas_cities:
+            if unsupported_city in question_lower:
+                return {
+                    "answer": "**Currently we support Texas only: Dallas, Austin, Houston, San Antonio.**\n\nI don't have information about housing regulations for other Texas cities. Please consult local resources or add the relevant regulation sources to `source.csv`.",
+                    "sources": [],
+                    "confidence": "low",
+                    "has_information": False
+                }
+        
         for city_name, keywords in city_keywords.items():
             if any(keyword in question_lower for keyword in keywords):
                 detected_city = city_name
@@ -200,6 +204,75 @@ class QASystem:
         enhanced_query = question
         if final_city and final_city != "Texas-Statewide":
             enhanced_query = f"{question} for {final_city}, Texas"
+        
+        # Handle multi-term explanation questions (e.g., "Explain these leasing terms: HUD, DOJ, ESA, rent control, zoning")
+        question_lower = question.lower()
+        if "explain these" in question_lower or ("explain" in question_lower and "terms" in question_lower and ":" in question):
+            # Extract terms from the question
+            terms_to_explain = []
+            if ":" in question:
+                after_colon = question.split(":")[-1].strip()
+                terms_to_explain = [t.strip() for t in after_colon.split(",")]
+            
+            if terms_to_explain:
+                # Search for all terms together first
+                enhanced_query = question
+                search_results = self.vector_store.search(
+                    query=enhanced_query,
+                    n_results=7,
+                    context={"city": final_city},
+                    prioritize_reliable=True,
+                    filter_geography=final_city if final_city != "Texas-Statewide" else None
+                )
+                
+                # Build structured answer using LLM if available, otherwise use context
+                if search_results:
+                    # Use LLM to generate structured answer
+                    context_parts = []
+                    sources = []
+                    seen_urls = set()
+                    
+                    for result in search_results:
+                        doc_text = result['document']
+                        metadata = result['metadata']
+                        source_name = metadata.get('source_name', 'Unknown')
+                        url = metadata.get('url', '')
+                        
+                        if url in seen_urls:
+                            continue
+                        seen_urls.add(url)
+                        
+                        # Clean text - remove URLs
+                        import re
+                        clean_text = re.sub(r'https?://[^\s\)]+', '', doc_text)
+                        clean_text = clean_text[:500]  # Limit length
+                        
+                        context_parts.append(f"Source: {source_name}\n{clean_text}")
+                        sources.append({
+                            "source": source_name,
+                            "url": url,
+                            "category": metadata.get('category', 'Unknown')
+                        })
+                    
+                    full_context = "\n\n---\n\n".join(context_parts[:5])
+                    
+                    # Generate answer using LLM
+                    import os
+                    from dotenv import load_dotenv
+                    load_dotenv()
+                    current_api_key = os.getenv("OPENAI_API_KEY", "") or OPENAI_API_KEY
+                    
+                    if current_api_key and current_api_key != "your_openai_api_key_here" and len(current_api_key) >= 20:
+                        try:
+                            answer = self._generate_llm_answer(question, full_context, final_city)
+                            return {
+                                "answer": answer,
+                                "sources": sources,
+                                "confidence": "high",
+                                "has_information": True
+                            }
+                        except:
+                            pass
         
         # Handle basic definition questions first
         question_lower = question.lower()
@@ -247,8 +320,26 @@ class QASystem:
         )
         
         if not search_results:
+            # Suggest which missing hyperlink is needed
+            question_lower = question.lower()
+            missing_topic = "this topic"
+            if "esa" in question_lower or "emotional support" in question_lower:
+                missing_topic = "ESA regulations"
+            elif "hud" in question_lower:
+                missing_topic = "HUD requirements"
+            elif "doj" in question_lower:
+                missing_topic = "DOJ regulations"
+            elif "rent control" in question_lower:
+                missing_topic = "rent control laws"
+            elif "zoning" in question_lower:
+                missing_topic = "zoning regulations"
+            elif "section 8" in question_lower or "hcv" in question_lower:
+                missing_topic = "Section 8 / HCV program information"
+            elif "leasing manager" in question_lower:
+                missing_topic = "leasing manager duties"
+            
             return {
-                "answer": "I don't have information about that topic in our regulation database. Please check the official sources directly.",
+                "answer": f"**This question cannot be answered from the current knowledge base.**\n\nMissing data. Add link for {missing_topic} to source.xlsx.",
                 "sources": [],
                 "confidence": "low",
                 "has_information": False
@@ -321,7 +412,8 @@ class QASystem:
             if len(clean_text) < 100:
                 continue  # Skip if too short
             
-            context_parts.append(f"From {source_name} ({url}):\n{clean_text}")
+            # Add context without "From..." prefix and without URLs in the text
+            context_parts.append(f"Source: {source_name}\n{clean_text}")
             sources.append({
                 "source": source_name,
                 "url": url,
@@ -331,7 +423,7 @@ class QASystem:
         
         if not context_parts:
             return {
-                "answer": f"I don't have specific information about '{question}' for {final_city} in our database. Please check the official sources directly.",
+                "answer": "**No verified information available from the current source list.**\n\nThis question cannot be answered using the regulations currently loaded in the system. Please ensure the relevant regulation sources are added to `source.csv` and loaded into the system.",
                 "sources": [],
                 "confidence": "low",
                 "has_information": False
@@ -413,46 +505,100 @@ class QASystem:
             from openai import OpenAI
             client = OpenAI(api_key=OPENAI_API_KEY)
             
-            prompt = f"""You are a helpful legal compliance assistant for Texas housing regulations. Answer the user's question based on the provided regulation context.
+            # Check if question is general and needs clarification
+            question_lower = question.lower()
+            is_general = not any(city_name.lower() in question_lower for city_name in ["dallas", "houston", "austin", "san antonio", "texas"])
+            needs_clarification = is_general and any(keyword in question_lower for keyword in ["rent", "regulation", "law", "policy", "rule", "requirement", "what", "how", "when", "explain"])
+            
+            # Clean context - remove URLs, source text, navigation menus
+            import re
+            clean_context = context
+            # Remove URL patterns completely
+            clean_context = re.sub(r'https?://[^\s\)]+', '', clean_context)
+            clean_context = re.sub(r'\(https?://[^\)]+\)', '', clean_context)
+            # Remove "From Source (URL):" patterns
+            clean_context = re.sub(r'From [^:]+ \(http[^\)]+\):', '', clean_context)
+            clean_context = re.sub(r'From [^:]+:', '', clean_context)
+            clean_context = re.sub(r'Source: [^\n]+', '', clean_context)
+            # Remove navigation and menu text
+            clean_context = re.sub(r'Skip to [^\n]+', '', clean_context)
+            clean_context = re.sub(r'Landlord/Tenant Law[^\n]*', '', clean_context)
+            clean_context = re.sub(r'Search this Guide[^\n]*', '', clean_context)
+            clean_context = re.sub(r'View all pages[^\n]*', '', clean_context)
+            clean_context = re.sub(r'Javascript must be enabled[^\n]*', '', clean_context)
+            clean_context = re.sub(r'Back to top[^\n]*', '', clean_context)
+            clean_context = re.sub(r'Menu[^\n]*', '', clean_context)
+            clean_context = re.sub(r'Keywords Search[^\n]*', '', clean_context)
+            # Remove any remaining URL fragments
+            clean_context = re.sub(r'guides\.', '', clean_context)
+            clean_context = re.sub(r'www\.', '', clean_context)
+            
+            # Detect if this is a multi-term explanation question
+            is_multi_term = any(phrase in question_lower for phrase in ["explain these", "what are", "define", "terms"])
+            
+            prompt = f"""You are a Housing Regulation Compliance Agent. You answer ONLY using information from the provided knowledge base chunks.
 
-IMPORTANT RULES:
-1. Use information from the provided context when available
-2. Explain legal jargon and acronyms (e.g., ESA = Emotional Support Animal, Fair Housing Act, etc.)
-3. If the context doesn't contain the answer, say "I don't have that information in our database. Please check the official sources directly."
-4. Be specific and cite which regulation applies - mention the source name when referencing information
-5. If asking about a specific city, focus on information relevant to that city
-6. For "new law" questions, PRIORITIZE the "RECENT UPDATES" section - these are the newest laws and should be mentioned first
-7. For compliance questions, provide clear yes/no with explanation
-8. For definition questions (e.g., "What does ESA mean?"), explain clearly even if it's basic knowledge
-9. For scenario questions (e.g., "I have a tenant who wants a rat as a pet"), provide practical guidance based on regulations
-10. For fee/pricing questions, be specific about what can and cannot be charged (e.g., ESA pets cannot be charged fees)
-11. Always mention which source/regulation you're citing (e.g., "According to [Source Name]...")
+HARD RULES:
+1. ONLY use information from the provided context chunks
+2. If information is NOT in the context, say "Information not found in the source database."
+3. DO NOT hallucinate, guess, or use knowledge outside the provided chunks
+4. Be EXTREMELY CONCISE - 1-2 sentences per term maximum (6th-grade English)
+5. NEVER include URLs, hyperlinks, or source names in your answer text
+6. For acronyms, explain simply: "HUD stands for the U.S. Department of Housing and Urban Development. It enforces fair housing laws."
+7. For multiple terms, use this EXACT format:
+   **HUD:** [1 sentence explanation]
+   **DOJ:** [1 sentence explanation]
+   **ESA:** [1 sentence explanation]
+8. Keep it SIMPLE - no complex legal jargon
+9. If the question is general (no city mentioned), answer briefly then ask: "Which city are you asking about - Dallas, Austin, Houston, San Antonio, or all of Texas?"
+10. Remove ALL source text, navigation menus, and website content from your answer
+11. Only use information that directly answers the question from the chunks
 
 Question: {question}
-Detected City: {city or 'Texas-Statewide'}
+City Context: {city or 'Texas-Statewide'}
 
-Regulation Context:
-{context[:6000]}
+Knowledge Base Chunks (ONLY use these):
+{clean_context[:6000]}
 
-Provide a clear, helpful answer. Explain any legal terms. For "new law" questions, make sure to highlight the recent updates you found. For scenario questions, provide practical guidance. If the context doesn't fully answer the question, be honest about what information is available."""
+Provide a VERY CONCISE answer using ONLY the chunks above. If information is missing, say "Information not found in the source database." Maximum 1-2 sentences per term."""
 
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "You are a helpful legal compliance assistant. Always be honest when you don't have information."},
+                    {"role": "system", "content": "You are a helpful legal compliance assistant. Be EXTREMELY CONCISE. Never include URLs, source names, or 'From...' phrases. Maximum 1-2 sentences per term. For general questions, ask which city."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0,
+                temperature=0.2,
                 max_tokens=500
             )
             
-            return response.choices[0].message.content.strip()
+            answer = response.choices[0].message.content.strip()
+            
+            # Post-process to ensure no URLs slipped through
+            answer = re.sub(r'https?://[^\s]+', '', answer)
+            answer = re.sub(r'\(https?://[^\)]+\)', '', answer)
+            answer = re.sub(r'From [^:]+ \(http[^\)]+\):', '', answer)
+            answer = re.sub(r'From [^:]+:', '', answer)
+            
+            # Add follow-up question for general questions if needed
+            if needs_clarification and city == "Texas-Statewide" and not any(city_name.lower() in answer.lower() for city_name in ["dallas", "houston", "austin", "san antonio"]):
+                answer += "\n\n**Is this for Dallas, Austin, Houston, San Antonio, or all of Texas?** I can provide city-specific details once you let me know."
+            
+            return answer
         
         except Exception as e:
             return self._extract_answer_from_context(question, context, city)
     
     def _extract_answer_from_context(self, question: str, context: str, city: str) -> str:
         """Extract answer from context without LLM (free mode) - improved version"""
+        import re
+        
+        # Clean context - remove URLs
+        clean_context = re.sub(r'https?://[^\s\)]+', '', context)
+        clean_context = re.sub(r'\(https?://[^\)]+\)', '', clean_context)
+        clean_context = re.sub(r'From [^:]+ \(http[^\)]+\):', 'Source:', clean_context)
+        clean_context = re.sub(r'From [^:]+:', 'Source:', clean_context)
+        
         question_lower = question.lower()
         
         # Check for "new" or "recent" - prioritize recent updates section
@@ -559,15 +705,41 @@ Provide a clear, helpful answer. Explain any legal terms. For "new law" question
         
         if relevant_sentences:
             top_sentences = [s[0] for s in relevant_sentences[:8]]
+            # Clean URLs and source text from sentences
+            cleaned_sentences = []
+            for sent in top_sentences:
+                cleaned = re.sub(r'https?://[^\s\)]+', '', sent)
+                cleaned = re.sub(r'\(https?://[^\)]+\)', '', cleaned)
+                cleaned = re.sub(r'Source: [^\(]+ \(http[^\)]+\)', '', cleaned)
+                cleaned = re.sub(r'Source: [^\n]+', '', cleaned)
+                cleaned = re.sub(r'From [^:]+:', '', cleaned)
+                cleaned = re.sub(r'Skip to [^\n]+', '', cleaned)
+                cleaned = re.sub(r'Landlord/Tenant Law[^\n]*', '', cleaned)
+                cleaned = re.sub(r'Search this Guide[^\n]*', '', cleaned)
+                cleaned = re.sub(r'View all pages[^\n]*', '', cleaned)
+                # Only keep sentences that are meaningful (not navigation/menu text)
+                if cleaned.strip() and len(cleaned.strip()) > 20 and not any(skip in cleaned.lower() for skip in ['skip to', 'menu', 'search', 'view all', 'back to top']):
+                    cleaned_sentences.append(cleaned.strip())
+            
             seen = set()
             unique_sentences = []
-            for sent in top_sentences:
+            for sent in cleaned_sentences:
                 sent_lower = sent.lower()
                 if sent_lower not in seen:
                     seen.add(sent_lower)
                     unique_sentences.append(sent)
             
             answer = ". ".join(unique_sentences)
+            
+            # Remove any remaining URL patterns
+            answer = re.sub(r'https?://[^\s\)]+', '', answer)
+            answer = re.sub(r'\(https?://[^\)]+\)', '', answer)
+            
+            # Add follow-up question for general questions if needed
+            is_general = not any(city_name.lower() in question_lower for city_name in ["dallas", "houston", "austin", "san antonio", "texas"])
+            needs_clarification = is_general and any(keyword in question_lower for keyword in ["rent", "regulation", "law", "policy", "rule", "requirement", "what", "how", "when", "explain"])
+            if needs_clarification and city == "Texas-Statewide" and not any(city_name.lower() in answer.lower() for city_name in ["dallas", "houston", "austin", "san antonio"]):
+                answer += "\n\n**Is this for Dallas, Austin, Houston, San Antonio, or all of Texas?** I can provide city-specific details once you let me know."
             if "[Note:" not in answer:
                 answer += f"\n\n[Note: This is extracted from regulations. For complete information, please check the official sources linked below.]"
             return answer

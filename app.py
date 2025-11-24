@@ -150,37 +150,39 @@ def show_ip_agent_page():
         result = st.session_state.qa_system.answer_question_with_context(prompt_text, st.session_state.chat_history)
         answer_text = result['answer']
         
-        # Clean up answer
-        if "From " in answer_text and "(" in answer_text:
-            lines = answer_text.split('\n')
-            cleaned_lines = []
-            for line in lines:
-                if line.startswith("From ") and "(" in line and "):" in line:
-                    continue
-                if line.strip().startswith("---"):
-                    continue
-                cleaned_lines.append(line)
-            answer_text = '\n'.join(cleaned_lines).strip()
+        # Clean up answer - remove ALL source references, URLs, and navigation text
+        import re
+        answer_text = re.sub(r'From [^:]+ \(http[^\)]+\):', '', answer_text)
+        answer_text = re.sub(r'From [^:]+:', '', answer_text)
+        answer_text = re.sub(r'Source: [^\n]+', '', answer_text)
+        answer_text = re.sub(r'📚 Sources:?[^\n]*', '', answer_text)
+        answer_text = re.sub(r'🔗 \[[^\]]+\]\([^\)]+\)', '', answer_text)
+        answer_text = re.sub(r'\[This is a general explanation[^\]]+\]', '', answer_text)
+        answer_text = re.sub(r'See sources below[^\n]*', '', answer_text)
+        answer_text = re.sub(r'\[Note:[^\]]+\]', '', answer_text)
+        answer_text = re.sub(r'Skip to [^\n]+', '', answer_text)
+        answer_text = re.sub(r'Landlord/Tenant Law[^\n]*', '', answer_text)
+        answer_text = re.sub(r'Search this Guide[^\n]*', '', answer_text)
+        answer_text = re.sub(r'View all pages[^\n]*', '', answer_text)
         
-        if result['sources'] and "Sources:" not in answer_text:
+        # Remove lines with "---"
+        lines = answer_text.split('\n')
+        cleaned_lines = [line for line in lines if not line.strip().startswith("---")]
+        answer_text = '\n'.join(cleaned_lines).strip()
+        
+        # Clean up multiple newlines
+        answer_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer_text)
+        answer_text = answer_text.strip()
+        
+        # Add sources separately (deduplicated) - don't add to answer text
+        if result['sources']:
             seen_sources = set()
             unique_sources = []
             for source in result['sources']:
                 source_key = (source.get('url', ''), source.get('source', ''))
-                if source_key not in seen_sources:
+                if source_key not in seen_sources and source.get('url'):
                     seen_sources.add(source_key)
                     unique_sources.append(source)
-            if unique_sources:
-                answer_text += "\n\n**📚 Sources:**\n"
-                for source in unique_sources:
-                    if source.get('url'):
-                        if source['url'].startswith('http'):
-                            answer_text += f"- 🔗 [{source['source']}]({source['url']})\n"
-                        elif os.path.exists(source['url']):
-                            answer_text += f"- 📄 {source['source']}\n"
-        
-        if "[Note:" in answer_text:
-            answer_text = answer_text.split("[Note:")[0].strip()
         
         sources_data = []
         seen_sources = set()
@@ -190,34 +192,41 @@ def show_ip_agent_page():
                 seen_sources.add(source_key)
                 sources_data.append(source)
         
+        # Get applicable_to from result
+        applicable_to = result.get('applicable_to', ['Texas'])
+        
         st.session_state.chat_history.append({
             'role': 'assistant',
             'content': answer_text,
-            'sources': sources_data
+            'sources': sources_data,
+            'applicable_to': applicable_to
         })
         st.rerun()
     
     st.header("💬 Intelligence Platform Agent")
     
-    # Display example questions as first message if chat is empty
+    # Display predefined leasing manager questions as first message if chat is empty
     if len(st.session_state.chat_history) == 0:
         with st.chat_message("assistant"):
-            st.markdown("Hello! I'm your Intelligence Platform Agent. 👋\n\n**Try asking:**")
+            st.markdown("Hello! I'm your Housing Regulation Compliance Agent. 👋\n\n**Predefined Questions:**")
+            
+            # EXACT 6 predefined questions as specified
+            predefined_questions = [
+                ("What is ESA rule in Texas?", "ex1"),
+                ("What is the difference between rent control and zoning?", "ex2"),
+                ("What is Section 8 / HCV law in Texas?", "ex3"),
+                ("What rent rules apply in Dallas, TX?", "ex4"),
+                ("What are duties of a leasing manager under Texas law?", "ex5"),
+                ("What is HUD and DOJ? Explain in simple leasing terms.", "ex6")
+            ]
+            
+            # Display in 2 columns
             col1, col2 = st.columns(2)
-            with col1:
-                if st.button("💡 Updated law in Dallas", key="ex1", use_container_width=True):
-                    process_question("Updated law in Dallas")
-                if st.button("💡 What is ESA?", key="ex2", use_container_width=True):
-                    process_question("What is ESA?")
-                if st.button("💡 What is ESA law in Austin?", key="ex3", use_container_width=True):
-                    process_question("What is ESA law in Austin?")
-            with col2:
-                if st.button("💡 New rent control law in Dallas", key="ex4", use_container_width=True):
-                    process_question("New rent control law in Dallas")
-                if st.button("💡 What is rent control?", key="ex5", use_container_width=True):
-                    process_question("What is rent control?")
-                if st.button("💡 Attach document to check compliance", key="ex6", use_container_width=True):
-                    st.info("📎 Please use the file uploader below to attach a document, then ask 'Is this compliant?' or 'Check this document for compliance'")
+            for idx, (question, key) in enumerate(predefined_questions):
+                col = col1 if idx % 2 == 0 else col2
+                with col:
+                    if st.button(f"💡 {question}", key=key, use_container_width=True):
+                        process_question(question)
     
     # Display chat history
     for message in st.session_state.chat_history:
@@ -244,7 +253,7 @@ def show_ip_agent_page():
                     answer_content = '\n'.join(cleaned_lines).strip()
                 st.markdown(answer_content)
                 
-                # Show sources if available
+                # Show sources and applicable to if available
                 if 'sources' in message and message['sources']:
                     # Remove duplicates
                     seen_sources = set()
@@ -256,13 +265,20 @@ def show_ip_agent_page():
                             unique_sources.append(source)
                     
                     if unique_sources:
-                        with st.expander("📚 Sources", expanded=False):
-                            for source in unique_sources:
-                                if source.get('url') and (source['url'].startswith('http') or os.path.exists(source['url'])):
-                                    if source['url'].startswith('http'):
-                                        st.markdown(f"🔗 [{source['source']}]({source['url']})")
-                                    else:
-                                        st.markdown(f"📄 {source['source']}")
+                        st.markdown("---")
+                        st.markdown("### 📚 Sources")
+                        for source in unique_sources:
+                            if source.get('url') and (source['url'].startswith('http') or os.path.exists(source['url'])):
+                                if source['url'].startswith('http'):
+                                    st.markdown(f"🔗 [{source['source']}]({source['url']})")
+                                else:
+                                    st.markdown(f"📄 {source['source']}")
+                        
+                        # Show Applicable To
+                        applicable_to = message.get('applicable_to', ['Texas'])
+                        if applicable_to:
+                            st.markdown("### 🏙️ Applicable To")
+                            st.markdown(", ".join(applicable_to))
     
     # File uploader with expandable toolbar
     st.markdown("---")
@@ -674,46 +690,41 @@ def show_compliance_checker():
                     st.subheader("Summary")
                     st.markdown(result['summary'])
                     
-                    # Issues with action items
+                    # Issues with action items - format per requirements
                     if result['issues']:
-                        st.subheader("Compliance Issues & Action Items")
+                        st.subheader("Compliance Issues")
                         for issue in result['issues']:
-                            with st.expander(f"⚠️ Issue in Clause {issue['clause_number']}: {issue['clause_title'][:50]}"):
-                                st.markdown(f"**Clause Content:**")
-                                st.text(issue['clause_content'][:500])
-                                st.markdown(f"**Regulation Applies:** {issue['regulation_applies']}")
-                                st.markdown(f"**What's Missing:** {issue['whats_missing']}")
-                                st.markdown(f"**What to Fix:** {issue['what_to_fix']}")
-                                
-                                # Show action items for this specific issue
-                                st.markdown("---")
-                                st.markdown("**📋 Action Items for This Issue:**")
-                                if 'esa' in issue['what_to_fix'].lower() or 'emotional support' in issue['what_to_fix'].lower():
-                                    st.markdown("""
-                                    1. Remove pet fees/deposits for ESA animals
-                                    2. Update lease document
-                                    3. Post Fair Housing Act poster
-                                    4. Train staff on ESA requirements
-                                    5. Make ESA request forms available
-                                    """)
-                                elif 'fair housing' in issue['what_to_fix'].lower():
-                                    st.markdown("""
-                                    1. Update lease language per Fair Housing Act
-                                    2. Post Fair Housing poster
-                                    3. Update property management policies
-                                    4. Train staff on Fair Housing requirements
-                                    """)
+                            clause_title = issue.get('clause_title', 'Unknown Clause')
+                            st.markdown(f"### ❌ Non-compliant: {clause_title}")
+                            st.markdown("")
+                            
+                            # Reason
+                            reason = issue.get('whats_missing', issue.get('what_to_fix', 'Compliance issue detected'))
+                            st.markdown(f"**Reason:** {reason}")
+                            st.markdown("")
+                            
+                            # Fix
+                            if issue.get('suggested_revision'):
+                                st.markdown(f"**Fix:** Add the following:")
+                                st.code(issue['suggested_revision'], language=None)
+                            else:
+                                fix_text = issue.get('what_to_fix', 'Review and update clause for compliance')
+                                st.markdown(f"**Fix:** {fix_text}")
+                            st.markdown("")
+                            
+                            # Source
+                            source = issue.get('source')
+                            if source:
+                                source_name = source.get('source_name', 'Unknown')
+                                source_url = source.get('url', '')
+                                if source_url and source_url.startswith('http'):
+                                    st.markdown(f"**Source:** [{source_name}]({source_url})")
                                 else:
-                                    st.markdown("""
-                                    1. Review and update clause
-                                    2. Update lease document
-                                    3. Consult legal counsel if needed
-                                    """)
-                                
-                                if issue['suggested_revision']:
-                                    st.markdown("---")
-                                    st.markdown(f"**Suggested Revision:**")
-                                    st.code(issue['suggested_revision'])
+                                    st.markdown(f"**Source:** {source_name}")
+                            else:
+                                st.markdown(f"**Source:** {issue.get('regulation_applies', 'Texas Housing Regulations')}")
+                            
+                            st.markdown("---")
                         
                         # General action items section
                         st.markdown("---")
@@ -759,17 +770,21 @@ def show_update_log():
 **📢 Update Log** - Track all regulation changes and updates.
 
 **What you can do here:**
-- View all regulation updates that have been detected
-- See summaries of what changed in each regulation
-- Filter updates by city (Dallas, Houston, Austin, San Antonio)
-- Check when regulations were last updated
-- Manually trigger an update check
+- Select a jurisdiction (Federal, State, or City) to view updates
+- See summarized articles with what changed, who is impacted, and action items
+- View links to source documents
+- Check for new updates manually
 
 **How to use:**
-1. Click "Check for Updates Now" to scan for new changes
-2. Use the filters to find updates for specific cities
-3. Expand any update to see detailed summary and affected cities
+1. Select Federal, State, or a specific city (Dallas, Austin, Houston, San Antonio)
+2. View the latest update summary for that jurisdiction
+3. Click "Check for Updates Now" to scan for new changes
     """)
+    
+    # Jurisdiction selection
+    st.subheader("Select Jurisdiction")
+    jurisdiction_options = ["Federal", "State", "Dallas", "Austin", "Houston", "San Antonio"]
+    selected_jurisdiction = st.selectbox("Choose jurisdiction to view updates:", jurisdiction_options, key="jurisdiction_select")
     
     # Check for updates button
     if st.button("🔄 Check for Updates Now"):
@@ -783,52 +798,112 @@ def show_update_log():
             else:
                 st.info("No new updates detected.")
     
-    # Display recent updates
-    st.subheader("Recent Updates")
+    # Get updates for selected jurisdiction
+    st.subheader(f"Latest Updates: {selected_jurisdiction}")
     
-    # Show count
-    updates = st.session_state.db.get_recent_updates(limit=50)
-    if updates:
-        st.metric("Total Updates", len(updates))
+    # Get all regulations for this jurisdiction
+    all_regulations = st.session_state.db.get_all_regulations()
+    jurisdiction_regs = []
     
-    # Filter options
-    col1, col2 = st.columns(2)
-    with col1:
-        city_filter = st.selectbox("Filter by City", ["All"] + SUPPORTED_CITIES, key="update_city_filter")
-    with col2:
-        show_count = st.slider("Show Updates", 1, 50, 10, key="update_count")
-    
-    # Apply filter
-    filtered_updates = updates
-    if city_filter != "All":
-        filtered_updates = [
-            u for u in updates 
-            if city_filter in str(u.get('affected_cities', ''))
-        ]
-    
-    if filtered_updates:
-        st.markdown(f"**Showing {len(filtered_updates[:show_count])} of {len(filtered_updates)} updates**")
-        for update in filtered_updates[:show_count]:
-            affected_cities = eval(update.get('affected_cities', '[]')) if isinstance(update.get('affected_cities'), str) else update.get('affected_cities', [])
-            with st.expander(f"📢 {update['source_name']} - {update['detected_at']}", expanded=False):
-                st.markdown(f"**Category:** {update.get('category', 'N/A')}")
-                if update.get('url') and update['url'].startswith('http'):
-                    st.markdown(f"**URL:** [{update['url']}]({update['url']})")
-                else:
-                    st.markdown(f"**URL:** {update.get('url', 'N/A')}")
-                st.markdown(f"**Affected Cities:** {', '.join(affected_cities) if affected_cities else 'Texas-Statewide'}")
-                st.markdown("---")
-                st.markdown("**Update Summary:**")
-                st.write(update['update_summary'])
-                
-                # Show if email was sent
-                st.markdown("---")
-                st.info("📧 Email notifications saved to 'emails' folder (if SMTP not configured)")
-    else:
-        if city_filter != "All":
-            st.warning(f"No updates found for {city_filter}. Try 'All' or check other cities.")
+    for reg in all_regulations:
+        category = reg.get('category', '').lower()
+        source_name = reg.get('source_name', '').lower()
+        
+        if selected_jurisdiction == "Federal":
+            if 'federal' in category or reg.get('type', '').lower() == 'federal':
+                jurisdiction_regs.append(reg)
+        elif selected_jurisdiction == "State":
+            if 'state' in category or reg.get('type', '').lower() == 'state' or 'texas property' in source_name:
+                jurisdiction_regs.append(reg)
         else:
-            st.info("No updates recorded yet. Click 'Check for Updates' on the Home page to scan for changes.")
+            # City-specific
+            if selected_jurisdiction.lower() in category or selected_jurisdiction.lower() in source_name:
+                jurisdiction_regs.append(reg)
+    
+    # Get updates for these regulations
+    all_updates = st.session_state.db.get_recent_updates(limit=100)
+    jurisdiction_updates = []
+    
+    for update in all_updates:
+        reg_id = update.get('regulation_id')
+        # Find matching regulation
+        matching_reg = next((r for r in jurisdiction_regs if r['id'] == reg_id), None)
+        if matching_reg:
+            jurisdiction_updates.append(update)
+        else:
+            # Also check by affected cities
+            affected_cities = update.get('affected_cities', '')
+            if isinstance(affected_cities, str):
+                try:
+                    affected_cities = eval(affected_cities)
+                except:
+                    affected_cities = [affected_cities]
+            
+            if selected_jurisdiction in affected_cities or (selected_jurisdiction == "Federal" and "Federal" in str(update.get('category', ''))):
+                jurisdiction_updates.append(update)
+    
+    # Display updates
+    if jurisdiction_updates:
+        # Show most recent update first
+        latest_update = jurisdiction_updates[0]
+        affected_cities = latest_update.get('affected_cities', [])
+        if isinstance(affected_cities, str):
+            try:
+                affected_cities = eval(affected_cities)
+            except:
+                affected_cities = [affected_cities] if affected_cities else []
+        
+        st.markdown("### 📄 Latest Update Summary")
+        with st.expander(f"**{latest_update.get('source_name', 'Unknown Source')}** - {latest_update.get('detected_at', 'N/A')}", expanded=True):
+            st.markdown(f"**Category:** {latest_update.get('category', 'N/A')}")
+            
+            # Generate detailed summary
+            summary = latest_update.get('update_summary', 'No summary available.')
+            
+            st.markdown("---")
+            st.markdown("#### What Changed?")
+            st.write(summary)
+            
+            st.markdown("---")
+            st.markdown("#### Who is Impacted?")
+            st.write(f"**Leasing Managers and Property Managers** in {', '.join(affected_cities) if affected_cities else selected_jurisdiction} are impacted by this update. This affects how you handle lease agreements, tenant relations, and compliance requirements.")
+            
+            st.markdown("---")
+            st.markdown("#### What Action to Take?")
+            st.write("1. Review the updated regulation in detail using the source link below")
+            st.write("2. Update your lease documents and property management policies accordingly")
+            st.write("3. Train your staff on the new requirements")
+            st.write("4. Ensure all new leases comply with the updated regulation")
+            st.write("5. Consult with legal counsel if you have questions about implementation")
+            
+            st.markdown("---")
+            st.markdown("#### Source Link")
+            url = latest_update.get('url', '')
+            if url and url.startswith('http'):
+                st.markdown(f"🔗 [{latest_update.get('source_name', 'View Source')}]({url})")
+            else:
+                st.write(f"URL: {url if url else 'N/A'}")
+        
+        # Show additional updates if any
+        if len(jurisdiction_updates) > 1:
+            st.markdown("---")
+            st.markdown(f"### Additional Updates ({len(jurisdiction_updates) - 1} more)")
+            for update in jurisdiction_updates[1:]:
+                affected_cities = update.get('affected_cities', [])
+                if isinstance(affected_cities, str):
+                    try:
+                        affected_cities = eval(affected_cities)
+                    except:
+                        affected_cities = [affected_cities] if affected_cities else []
+                
+                with st.expander(f"📢 {update.get('source_name', 'Unknown')} - {update.get('detected_at', 'N/A')}", expanded=False):
+                    st.markdown(f"**Category:** {update.get('category', 'N/A')}")
+                    url = update.get('url', '')
+                    if url and url.startswith('http'):
+                        st.markdown(f"**URL:** [{url}]({url})")
+                    st.markdown(f"**Summary:** {update.get('update_summary', 'No summary available.')}")
+    else:
+        st.info("**No new updates at the moment. Please check back later.**")
 
 def show_email_alerts():
     st.header("📧 Email Alert Subscription")

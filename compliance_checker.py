@@ -75,13 +75,13 @@ Return ONLY the revised clause text, nothing else."""
             return f"Error refining clause: {str(e)}"
     
     def check_compliance(self, file_content: bytes, filename: str, city: str = "Texas-Statewide") -> Dict:
-        """Check lease document for compliance"""
+        """Check lease document for compliance - ONLY using knowledge base from source.xlsx"""
         # Parse document
         doc_data = self.parser.parse_document(file_content, filename)
         text = doc_data['text']
         clauses = self.parser.extract_clauses(text)
         
-        # Find relevant regulations - search more broadly and get more results
+        # Find relevant regulations - ONLY from knowledge base (source.xlsx)
         relevant_regs = []
         # Search with document title/keywords with enhanced retrieval
         doc_keywords = f"{filename} lease rental agreement"
@@ -94,17 +94,29 @@ Return ONLY the revised clause text, nothing else."""
         )
         relevant_regs.extend(doc_search)
         
-        # Search for each clause with enhanced retrieval
+        # Search for each clause with enhanced retrieval - ONLY from knowledge base
         for clause in clauses:
             # Search for relevant regulations with enhanced retrieval
             search_results = self.vector_store.search(
                 query=clause['content'],
-                n_results=5,  # Increased from 3 to 5
+                n_results=5,
                 context={"city": city},
-                prioritize_reliable=True,  # Prioritize authoritative sources
+                prioritize_reliable=True,
                 filter_geography=city if city != "Texas-Statewide" else None
             )
             relevant_regs.extend(search_results)
+        
+        # If no regulations found in knowledge base, return error
+        if not relevant_regs:
+            return {
+                "is_compliant": None,
+                "total_clauses": len(clauses),
+                "issues_found": 0,
+                "clauses": [],
+                "issues": [],
+                "summary": "**Cannot check compliance:** No relevant regulations found in the knowledge base for this document. Please ensure the relevant regulation sources are added to source.xlsx.",
+                "disclaimer": LEGAL_DISCLAIMER
+            }
         
         # Remove duplicates while preserving order
         seen = set()
@@ -302,6 +314,16 @@ Return ONLY the revised clause text, nothing else."""
         if issues:
             # Use the first (most critical) issue
             main_issue = issues[0]
+            # Get source information from relevant regulations
+            source_info = None
+            if relevant_regulations:
+                first_reg = relevant_regulations[0]
+                source_info = {
+                    "source_name": first_reg['metadata'].get('source_name', 'Unknown'),
+                    "url": first_reg['metadata'].get('url', ''),
+                    "category": first_reg['metadata'].get('category', 'Unknown')
+                }
+            
             return {
                 "clause_number": clause['number'],
                 "clause_title": clause['title'],
@@ -311,6 +333,7 @@ Return ONLY the revised clause text, nothing else."""
                 "whats_missing": main_issue.get("what_to_fix", ""),
                 "what_to_fix": main_issue.get("what_to_fix", "Review clause for compliance"),
                 "suggested_revision": main_issue.get("suggested_revision"),
+                "source": source_info,
                 "issue": f"Clause {clause['number']}: {main_issue.get('what_to_fix', 'Compliance issue detected')}"
             }
         else:
@@ -412,6 +435,16 @@ Format your response as JSON:
                     "suggested_revision": None
                 }
             
+            # Get source information from relevant regulations
+            source_info = None
+            if relevant_regulations:
+                first_reg = relevant_regulations[0]
+                source_info = {
+                    "source_name": first_reg['metadata'].get('source_name', 'Unknown'),
+                    "url": first_reg['metadata'].get('url', ''),
+                    "category": first_reg['metadata'].get('category', 'Unknown')
+                }
+            
             return {
                 "clause_number": clause['number'],
                 "clause_title": clause['title'],
@@ -421,6 +454,7 @@ Format your response as JSON:
                 "whats_missing": result.get("whats_missing", ""),
                 "what_to_fix": result.get("what_to_fix", ""),
                 "suggested_revision": result.get("suggested_revision"),
+                "source": source_info,
                 "issue": f"Clause {clause['number']}: {result.get('what_to_fix', 'Compliance issue detected')}"
             }
         except Exception as e:
