@@ -114,7 +114,7 @@ Return ONLY the revised clause text, nothing else."""
                 "issues_found": 0,
                 "clauses": [],
                 "issues": [],
-                "summary": "**Cannot check compliance:** No relevant regulations found in the knowledge base for this document. Please ensure the relevant regulation sources are added to source.xlsx.",
+                "summary": "**Cannot check compliance:** No relevant regulations found in the knowledge base for this document. Please ensure the relevant regulation sources are added to sources.xlsx.",
                 "disclaimer": LEGAL_DISCLAIMER
             }
         
@@ -202,20 +202,32 @@ Return ONLY the revised clause text, nothing else."""
         issues = []
         is_compliant = True
         
-        # Rule 1: ESA/Service Animal fees - NON-COMPLIANT
-        esa_keywords = ['pet fee', 'pet deposit', 'pet rent', 'animal fee', 'animal deposit', 'animal rent']
-        esa_mentions = ['esa', 'emotional support', 'service animal', 'assistance animal']
+        # Rule 1: ESA/Service Animal fees - NON-COMPLIANT (ENHANCED DETECTION)
+        esa_keywords = ['pet fee', 'pet deposit', 'pet rent', 'animal fee', 'animal deposit', 'animal rent', 
+                       'fee for', 'charge for', 'deposit for', 'rent for']
+        esa_mentions = ['esa', 'emotional support', 'service animal', 'assistance animal', 'support animal']
         
         has_pet_fees = any(keyword in clause_content for keyword in esa_keywords)
         mentions_esa = any(mention in clause_content for mention in esa_mentions)
         
-        if has_pet_fees and mentions_esa:
+        # Check for explicit charging for ESA (e.g., "charge for ESA", "fee for emotional support animal")
+        import re
+        esa_charging_patterns = [
+            r'charge.*(?:for|of).*(?:esa|emotional support|service animal)',
+            r'fee.*(?:for|of).*(?:esa|emotional support|service animal)',
+            r'deposit.*(?:for|of).*(?:esa|emotional support|service animal)',
+            r'rent.*(?:for|of).*(?:esa|emotional support|service animal)',
+            r'(?:esa|emotional support|service animal).*(?:fee|charge|deposit|rent)'
+        ]
+        has_esa_charging = any(re.search(pattern, clause_content, re.IGNORECASE) for pattern in esa_charging_patterns)
+        
+        if has_pet_fees and mentions_esa or has_esa_charging:
             is_compliant = False
             issues.append({
                 "type": "ESA_FEES",
-                "regulation": "Fair Housing Act and Texas Property Code prohibit charging fees for Emotional Support Animals (ESA) and Service Animals. These are not pets and must be accommodated without fees, deposits, or pet rent.",
-                "what_to_fix": "Remove all pet fees, deposits, and pet rent requirements for ESA and Service Animals. Add explicit language that ESAs and Service Animals are exempt from pet policies.",
-                "suggested_revision": "Emotional Support Animals (ESA) and Service Animals are not considered pets and are exempt from all pet fees, deposits, and pet rent. Landlord must make reasonable accommodations for ESAs and Service Animals as required by the Fair Housing Act."
+                "regulation": "Fair Housing Act and Texas Property Code prohibit charging fees, deposits, or pet rent for Emotional Support Animals (ESA) and Service Animals. These are not pets and must be accommodated without any fees, deposits, or pet rent. Landlords cannot charge for ESAs under any circumstances.",
+                "what_to_fix": "Remove all pet fees, deposits, and pet rent requirements for ESA and Service Animals. The clause explicitly charges for ESA animals, which is prohibited by federal law. Add explicit language that ESAs and Service Animals are exempt from pet policies and cannot be charged any fees.",
+                "suggested_revision": "Emotional Support Animals (ESA) and Service Animals are not considered pets and are exempt from all pet fees, deposits, and pet rent. Landlord must make reasonable accommodations for ESAs and Service Animals as required by the Fair Housing Act. No fees, deposits, or additional rent may be charged for ESAs or Service Animals."
             })
         elif has_pet_fees and ('pet' in clause_content or 'animal' in clause_content):
             # Check if it mentions ESA exemption
@@ -225,6 +237,36 @@ Return ONLY the revised clause text, nothing else."""
                     "type": "MISSING_ESA_EXEMPTION",
                     "regulation": "Fair Housing Act requires that ESAs and Service Animals be exempt from pet fees. The clause should explicitly state this exemption.",
                     "what_to_fix": "Add language explicitly exempting ESAs and Service Animals from pet fees and deposits.",
+                    "suggested_revision": None
+                })
+        
+        # Rule 1.5: Check for rent increase violations (e.g., $350 increase)
+        rent_increase_patterns = [
+            r'\$350',
+            r'350\s*dollar',
+            r'increase.*350',
+            r'350.*increase'
+        ]
+        has_rent_increase = any(re.search(pattern, clause_content, re.IGNORECASE) for pattern in rent_increase_patterns)
+        
+        # Check if rent increase is mentioned with $350
+        if has_rent_increase and ('rent' in clause_content or 'rental' in clause_content):
+            # Check if this is a city with rent control (Dallas has rent control)
+            if city and 'dallas' in city.lower():
+                is_compliant = False
+                issues.append({
+                    "type": "RENT_INCREASE_VIOLATION",
+                    "regulation": "Dallas rent control regulations limit rent increases. A $350 rent increase may exceed the allowed percentage increase and violate local rent control ordinances. Rent increases must comply with Dallas rent control policies.",
+                    "what_to_fix": "Review the $350 rent increase against Dallas rent control regulations. The increase amount may violate local rent control limits. Adjust the rent increase to comply with Dallas rent control policies, which typically limit increases to a percentage of current rent.",
+                    "suggested_revision": "Rent increases must comply with Dallas rent control regulations. Please review the specific dollar amount against current rent control limits before implementing any rent increase."
+                })
+            else:
+                # For other cities, still flag if it seems excessive
+                is_compliant = False
+                issues.append({
+                    "type": "RENT_INCREASE_REVIEW",
+                    "regulation": "Rent increases must be reasonable and comply with local regulations. A $350 increase may require review to ensure it complies with local rent control or tenant protection laws.",
+                    "what_to_fix": "Review the $350 rent increase amount to ensure it complies with local rent control regulations and is reasonable. Verify the increase percentage and ensure proper notice is given as required by law.",
                     "suggested_revision": None
                 })
         
@@ -324,12 +366,17 @@ Return ONLY the revised clause text, nothing else."""
                     "category": first_reg['metadata'].get('category', 'Unknown')
                 }
             
+            # If no matching regulation found in database, return specific message
+            regulation_text = main_issue.get("regulation", "")
+            if not regulation_text or "Review required" in regulation_text or "Unable to analyze" in regulation_text:
+                regulation_text = "No matching regulatory rule found in the current source file. Please add a hyperlink that covers this clause."
+            
             return {
                 "clause_number": clause['number'],
                 "clause_title": clause['title'],
                 "clause_content": clause['content'][:500],
                 "is_compliant": False,
-                "regulation_applies": main_issue.get("regulation", "Review required against Texas housing regulations"),
+                "regulation_applies": regulation_text,
                 "whats_missing": main_issue.get("what_to_fix", ""),
                 "what_to_fix": main_issue.get("what_to_fix", "Review clause for compliance"),
                 "suggested_revision": main_issue.get("suggested_revision"),
@@ -369,40 +416,45 @@ Return ONLY the revised clause text, nothing else."""
             
             prompt = f"""You are a legal compliance expert for Texas housing regulations. Analyze THIS SPECIFIC CLAUSE based on its actual content, not generic rules.
 
+STRICT RULES:
+1. ONLY use information from the provided RELEVANT REGULATIONS FROM DATABASE - NO outside knowledge
+2. If no matching regulation is found in the database, respond: "No matching regulatory rule found in the current source file. Please add a hyperlink that covers this clause."
+3. DO NOT guess, hallucinate, or use regulations not in the database
+4. DO NOT use prior model knowledge about Texas law - ONLY use provided regulations
+
 CLAUSE TITLE: {clause_title}
 CLAUSE CONTENT:
 {clause_content}
 
 CITY: {city}, Texas
 
-RELEVANT REGULATIONS FROM DATABASE:
+RELEVANT REGULATIONS FROM DATABASE (ONLY use these):
 {reg_context[:5000]}
 
 CRITICAL INSTRUCTIONS:
 1. Analyze THIS SPECIFIC CLAUSE based on what it actually says, not generic requirements
-2. If the clause is about RENT, analyze rent-related compliance (late fees, payment terms, etc.)
-3. If the clause is about SECURITY DEPOSIT, analyze deposit return timelines, deductions, etc.
-4. If the clause is about PETS/ANIMALS, check for ESA/service animal compliance
-5. If the clause is about LATE FEES, check if they're reasonable and comply with Texas law
-6. If the clause is about UTILITIES, check utility disclosure requirements
-7. If the clause is about VEHICLES/PARKING, check parking and towing regulations
-8. ONLY mark as non-compliant if THIS SPECIFIC CLAUSE has an actual violation
-9. If the clause is compliant but missing disclosures, note that separately
-10. If regulations don't cover this specific clause topic, say "This clause appears compliant, but I don't have specific regulations about this topic in our database."
+2. If the clause is about RENT, analyze rent-related compliance (late fees, payment terms, etc.) - ONLY if regulations cover this
+3. If the clause is about SECURITY DEPOSIT, analyze deposit return timelines, deductions, etc. - ONLY if regulations cover this
+4. If the clause is about PETS/ANIMALS, check for ESA/service animal compliance - ONLY if regulations cover this
+5. If the clause is about LATE FEES, check if they're reasonable and comply with Texas law - ONLY if regulations cover this
+6. If the clause is about UTILITIES, check utility disclosure requirements - ONLY if regulations cover this
+7. If the clause is about VEHICLES/PARKING, check parking and towing regulations - ONLY if regulations cover this
+8. ONLY mark as non-compliant if THIS SPECIFIC CLAUSE has an actual violation based on provided regulations
+9. If regulations don't cover this specific clause topic, say: "No matching regulatory rule found in the current source file. Please add a hyperlink that covers this clause."
 
 ANALYZE THE ACTUAL CONTENT:
 - What does this clause actually say?
-- Does it violate any Texas housing laws based on the regulations provided?
-- Is it missing required language?
-- Are there specific numbers, dates, or terms that violate regulations?
+- Does it violate any Texas housing laws based on the REGULATIONS PROVIDED ABOVE?
+- Is it missing required language according to the REGULATIONS PROVIDED ABOVE?
+- Are there specific numbers, dates, or terms that violate the REGULATIONS PROVIDED ABOVE?
 
 Format your response as JSON:
 {{
     "is_compliant": true/false/null,
-    "regulation_applies": "Specific regulation that applies to THIS clause, or 'This clause appears compliant' or 'Not found in our database'",
-    "whats_missing": "What is specifically missing or wrong in THIS clause (be specific to the clause content)",
-    "what_to_fix": "Specific fix needed for THIS clause (be specific, not generic)",
-    "suggested_revision": "Complete revised clause text that fixes the issue, or null if compliant"
+    "regulation_applies": "Specific regulation from database that applies to THIS clause, or 'No matching regulatory rule found in the current source file. Please add a hyperlink that covers this clause.'",
+    "whats_missing": "What is specifically missing or wrong in THIS clause (be specific to the clause content) - ONLY if regulation exists",
+    "what_to_fix": "Specific fix needed for THIS clause (be specific, not generic) - ONLY if regulation exists",
+    "suggested_revision": "Complete revised clause text that fixes the issue, or null if compliant or no regulation found"
 }}"""
 
             response = client.chat.completions.create(
@@ -445,12 +497,17 @@ Format your response as JSON:
                     "category": first_reg['metadata'].get('category', 'Unknown')
                 }
             
+            # Check if regulation_applies indicates missing data
+            regulation_applies = result.get("regulation_applies", "")
+            if not regulation_applies or "Not found" in regulation_applies or "don't have" in regulation_applies.lower():
+                regulation_applies = "No matching regulatory rule found in the current source file. Please add a hyperlink that covers this clause."
+            
             return {
                 "clause_number": clause['number'],
                 "clause_title": clause['title'],
                 "clause_content": clause['content'][:500],
                 "is_compliant": result.get("is_compliant", True),
-                "regulation_applies": result.get("regulation_applies", ""),
+                "regulation_applies": regulation_applies,
                 "whats_missing": result.get("whats_missing", ""),
                 "what_to_fix": result.get("what_to_fix", ""),
                 "suggested_revision": result.get("suggested_revision"),

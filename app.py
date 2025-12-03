@@ -13,6 +13,7 @@ from qa_system import QASystem
 from config import SUPPORTED_CITIES, REGULATION_CATEGORIES, LEGAL_DISCLAIMER, SOURCES_FILE
 import time
 import os
+import re
 
 # Page configuration
 st.set_page_config(
@@ -22,23 +23,65 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize session state
+# Initialize session state with error handling
 if 'db' not in st.session_state:
-    st.session_state.db = RegulationDB()
+    try:
+        st.session_state.db = RegulationDB()
+    except Exception as e:
+        st.session_state.db = None
+        st.session_state._db_error = str(e)
+
 if 'scraper' not in st.session_state:
-    st.session_state.scraper = RegulationScraper()
+    try:
+        st.session_state.scraper = RegulationScraper()
+    except Exception as e:
+        st.session_state.scraper = None
+        st.session_state._scraper_error = str(e)
+
 if 'vector_store' not in st.session_state:
-    st.session_state.vector_store = RegulationVectorStore()
+    try:
+        st.session_state.vector_store = RegulationVectorStore()
+    except Exception as e:
+        st.session_state.vector_store = None
+        st.session_state._vector_store_error = str(e)
+
 if 'update_checker' not in st.session_state:
-    st.session_state.update_checker = UpdateChecker()
+    try:
+        st.session_state.update_checker = UpdateChecker()
+    except Exception as e:
+        st.session_state.update_checker = None
+        st.session_state._update_checker_error = str(e)
+
 if 'compliance_checker' not in st.session_state:
-    st.session_state.compliance_checker = ComplianceChecker()
+    try:
+        st.session_state.compliance_checker = ComplianceChecker()
+    except Exception as e:
+        st.session_state.compliance_checker = None
+        st.session_state._compliance_checker_error = str(e)
+
 if 'email_system' not in st.session_state:
-    st.session_state.email_system = EmailAlertSystem()
+    try:
+        st.session_state.email_system = EmailAlertSystem()
+    except Exception as e:
+        st.session_state.email_system = None
+        st.session_state._email_system_error = str(e)
+
 if 'qa_system' not in st.session_state:
-    st.session_state.qa_system = QASystem()
+    try:
+        st.session_state.qa_system = QASystem()
+    except Exception as e:
+        st.session_state.qa_system = None
+        st.session_state._qa_system_error = str(e)
 
 def main():
+    # Show initialization errors if any
+    if hasattr(st.session_state, '_db_error'):
+        st.error(f"⚠️ Database initialization failed: {st.session_state._db_error}")
+    if hasattr(st.session_state, '_vector_store_error'):
+        st.warning(f"⚠️ Vector store initialization failed: {st.session_state._vector_store_error}")
+    if hasattr(st.session_state, '_qa_system_error'):
+        st.error(f"⚠️ QA system initialization failed: {st.session_state._qa_system_error}")
+    
     st.title("🏠 Intelligence Platform")
     st.markdown("**AI-Powered Housing Regulation Compliance Assistant**")
     
@@ -128,7 +171,7 @@ def show_home():
                     st.info("No new updates detected. All regulations are up to date.")
     
     with col2:
-        if st.button("📥 Load Regulations from CSV", use_container_width=True):
+        if st.button("📥 Load Regulations from Excel", use_container_width=True):
             try:
                 result = st.session_state.db.load_regulations_from_csv(SOURCES_FILE)
                 st.success(f"Regulations loaded successfully! ({result['loaded']} loaded, {result['skipped']} skipped)")
@@ -146,17 +189,30 @@ def show_ip_agent_page():
     
     def process_question(prompt_text):
         """Helper function to process a question and add to chat history"""
+        if st.session_state.qa_system is None:
+            return {
+                'answer': '❌ **Error:** QA system is not initialized. Please check the Settings page or restart the app.',
+                'sources': []
+            }
         st.session_state.chat_history.append({'role': 'user', 'content': prompt_text})
         result = st.session_state.qa_system.answer_question_with_context(prompt_text, st.session_state.chat_history)
         answer_text = result['answer']
         
-        # Clean up answer - remove ALL source references, URLs, and navigation text
+        # Clean up answer - remove ALL URLs, source references, and navigation text
         import re
+        
+        # Check for personal legal advice requests
+        prompt_lower = prompt_text.lower()
+        personal_advice_keywords = ["my situation", "my case", "i have", "i need advice", "what should i do about", "can i", "should i", "help me with my"]
+        is_personal_advice = any(keyword in prompt_lower for keyword in personal_advice_keywords)
+        
+        # Clean answer text
         answer_text = re.sub(r'From [^:]+ \(http[^\)]+\):', '', answer_text)
         answer_text = re.sub(r'From [^:]+:', '', answer_text)
         answer_text = re.sub(r'Source: [^\n]+', '', answer_text)
         answer_text = re.sub(r'📚 Sources:?[^\n]*', '', answer_text)
         answer_text = re.sub(r'🔗 \[[^\]]+\]\([^\)]+\)', '', answer_text)
+        answer_text = re.sub(r'https?://[^\s\)]+', '', answer_text)  # Remove all URLs
         answer_text = re.sub(r'\[This is a general explanation[^\]]+\]', '', answer_text)
         answer_text = re.sub(r'See sources below[^\n]*', '', answer_text)
         answer_text = re.sub(r'\[Note:[^\]]+\]', '', answer_text)
@@ -164,42 +220,76 @@ def show_ip_agent_page():
         answer_text = re.sub(r'Landlord/Tenant Law[^\n]*', '', answer_text)
         answer_text = re.sub(r'Search this Guide[^\n]*', '', answer_text)
         answer_text = re.sub(r'View all pages[^\n]*', '', answer_text)
+        # Remove update formatting markers
+        answer_text = re.sub(r'=== RECENT UPDATES[^=]*===', '', answer_text, flags=re.IGNORECASE)
+        answer_text = re.sub(r'=== REGULATION DATABASE[^=]*===', '', answer_text, flags=re.IGNORECASE)
+        answer_text = re.sub(r'\(NEW LAWS\)', '', answer_text, flags=re.IGNORECASE)
+        # Fix character-by-character spacing issues
+        lines = answer_text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            # Skip lines that are just single characters (likely formatting artifacts)
+            stripped = line.strip()
+            if len(stripped) > 1 or (stripped and stripped.isalnum() and len(stripped) == 1 and stripped.isalpha()):
+                # Only keep single character lines if they're meaningful (like "a" in "a tenant")
+                if len(stripped) == 1:
+                    # Check if previous line ends with space (likely part of a word)
+                    if cleaned_lines and cleaned_lines[-1].rstrip().endswith(' '):
+                        cleaned_lines.append(line)
+                    else:
+                        # Skip single character lines that are likely artifacts
+                        continue
+                else:
+                    cleaned_lines.append(line)
+            elif not stripped:
+                # Keep empty lines for paragraph spacing
+                cleaned_lines.append(line)
+        answer_text = '\n'.join(cleaned_lines)
+        # Fix excessive spacing
+        answer_text = re.sub(r'([a-z])\s+([a-z])', r'\1 \2', answer_text)  # Fix word spacing
+        answer_text = re.sub(r'\s+', ' ', answer_text)  # Normalize spaces
+        answer_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer_text)  # Normalize line breaks
         
         # Remove lines with "---"
         lines = answer_text.split('\n')
         cleaned_lines = [line for line in lines if not line.strip().startswith("---")]
         answer_text = '\n'.join(cleaned_lines).strip()
         
-        # Clean up multiple newlines
+        # Clean up excessive newlines but preserve bullet list structure
         answer_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer_text)
-        answer_text = answer_text.strip()
+        # Don't collapse to single paragraph - preserve structure for bullet lists
         
-        # Add sources separately (deduplicated) - don't add to answer text
-        if result['sources']:
-            seen_sources = set()
-            unique_sources = []
-            for source in result['sources']:
-                source_key = (source.get('url', ''), source.get('source', ''))
-                if source_key not in seen_sources and source.get('url'):
-                    seen_sources.add(source_key)
-                    unique_sources.append(source)
-        
-        sources_data = []
-        seen_sources = set()
+        # Format sources as hyperlinks (collect ALL unique sources - multiple hyperlinks)
+        source_urls = []
+        seen_urls = set()
         for source in result.get('sources', []):
-            source_key = (source.get('url', ''), source.get('source', ''))
-            if source_key not in seen_sources:
-                seen_sources.add(source_key)
-                sources_data.append(source)
+            url = source.get('url', '')
+            # Include http, https, and file:// URLs (all sources)
+            if url and url.startswith(('http://', 'https://', 'file://')) and url not in seen_urls:
+                seen_urls.add(url)
+                source_urls.append(url)
         
-        # Get applicable_to from result
-        applicable_to = result.get('applicable_to', ['Texas'])
+        # Add safety note for personal legal advice
+        if is_personal_advice and "consult" not in answer_text.lower() and "qualified" not in answer_text.lower():
+            answer_text += " For specific legal advice regarding your situation, please consult with a qualified legal professional."
+        
+        # Format sources at the end as hyperlinks (ALL sources - multiple hyperlinks)
+        if source_urls:
+            # Check if [SOURCES] section already exists
+            if "[SOURCES]" not in answer_text:
+                answer_text += "\n\n[SOURCES]\n\n"
+                # Display ALL source URLs in format: - Name: hyperlink
+                for source in result.get('sources', []):
+                    url = source.get('url', '')
+                    source_name = source.get('source', source.get('source_name', 'Unknown Source'))
+                    if url and url.startswith(('http://', 'https://', 'file://')):
+                        # Format as: - Name: hyperlink
+                        answer_text += f"- {source_name}: {url}\n\n"
         
         st.session_state.chat_history.append({
             'role': 'assistant',
             'content': answer_text,
-            'sources': sources_data,
-            'applicable_to': applicable_to
+            'sources': result.get('sources', [])
         })
         st.rerun()
     
@@ -208,16 +298,14 @@ def show_ip_agent_page():
     # Display predefined leasing manager questions as first message if chat is empty
     if len(st.session_state.chat_history) == 0:
         with st.chat_message("assistant"):
-            st.markdown("Hello! I'm your Housing Regulation Compliance Agent. 👋\n\n**Predefined Questions:**")
+            st.markdown("Hello! I'm your Texas Housing Compliance Assistant, trained to support leasing managers. 👋\n\n**Frequent Questions:**")
             
-            # EXACT 6 predefined questions as specified
+            # Pre-populated questions as specified
             predefined_questions = [
-                ("What is ESA rule in Texas?", "ex1"),
-                ("What is the difference between rent control and zoning?", "ex2"),
-                ("What is Section 8 / HCV law in Texas?", "ex3"),
-                ("What rent rules apply in Dallas, TX?", "ex4"),
-                ("What are duties of a leasing manager under Texas law?", "ex5"),
-                ("What is HUD and DOJ? Explain in simple leasing terms.", "ex6")
+                ("What is ESA?", "pre1"),
+                ("What is HUD?", "pre2"),
+                ("What is Section 8 in Dallas, Texas?", "pre3"),
+                ("What are landlord obligations under Texas law?", "pre4")
             ]
             
             # Display in 2 columns
@@ -251,7 +339,80 @@ def show_ip_agent_page():
                             continue
                         cleaned_lines.append(line)
                     answer_content = '\n'.join(cleaned_lines).strip()
-                st.markdown(answer_content)
+                
+                # Remove ALL markdown formatting that causes large/bold text
+                # Remove bold headers (##, ###, **text**)
+                answer_content = re.sub(r'^#{1,6}\s+', '', answer_content, flags=re.MULTILINE)  # Remove markdown headers
+                answer_content = re.sub(r'\*\*([^*]+)\*\*', r'\1', answer_content)  # Remove bold (**text**)
+                answer_content = re.sub(r'\*([^*]+)\*', r'\1', answer_content)  # Remove italic (*text*)
+                answer_content = re.sub(r'^Answer:\s*', '', answer_content, flags=re.IGNORECASE | re.MULTILINE)  # Remove "Answer:" prefix
+                
+                # Split on [SOURCES] or Sources section
+                if "[SOURCES]" in answer_content:
+                    # Split on [SOURCES]
+                    parts = answer_content.split("[SOURCES]")
+                    if len(parts) > 1:
+                        # Display answer part - clean plain text (remove all markdown)
+                        answer_part = parts[0].replace("[ANSWER]", "").strip()
+                        # Remove ALL markdown formatting completely - be very aggressive
+                        answer_part = re.sub(r'\*\*([^*]+)\*\*', r'\1', answer_part)  # Remove bold
+                        answer_part = re.sub(r'\*([^*]+)\*', r'\1', answer_part)  # Remove italic
+                        answer_part = re.sub(r'^#{1,6}\s+', '', answer_part, flags=re.MULTILINE)  # Remove headers
+                        answer_part = re.sub(r'^##+\s*', '', answer_part, flags=re.MULTILINE)  # Remove any remaining headers
+                        answer_part = re.sub(r'<[^>]+>', '', answer_part)  # Remove HTML tags
+                        # Display using st.write (which should render as plain text if no markdown)
+                        st.write(answer_part)
+                        
+                        # Display sources section
+                        st.write("\n[SOURCES]\n")
+                        sources_text = parts[1].strip()
+                        # Parse sources in format: - Name: hyperlink
+                        source_lines = sources_text.split('\n')
+                        for line in source_lines:
+                            line = line.strip()
+                            if line.startswith('-') and ':' in line:
+                                st.write(line)
+                            elif 'http' in line:
+                                # Extract URL if it's just a URL
+                                urls = re.findall(r'https?://[^\s\n\)]+', line)
+                                for url in urls:
+                                    st.write(url)
+                elif "Sources:" in answer_content or "**Sources:**" in answer_content or "**Sources**" in answer_content:
+                    # Split on Sources: (with or without markdown) - legacy format
+                    parts = re.split(r'\*\*Sources\*\*:?\s*|Sources:\s*', answer_content, flags=re.IGNORECASE)
+                    if len(parts) > 1:
+                        # Display answer part - clean plain text (remove all markdown)
+                        answer_part = parts[0].strip()
+                        # Remove ALL markdown formatting completely - be very aggressive
+                        answer_part = re.sub(r'\*\*([^*]+)\*\*', r'\1', answer_part)  # Remove bold
+                        answer_part = re.sub(r'\*([^*]+)\*', r'\1', answer_part)  # Remove italic
+                        answer_part = re.sub(r'^#{1,6}\s+', '', answer_part, flags=re.MULTILINE)  # Remove headers
+                        answer_part = re.sub(r'^##+\s*', '', answer_part, flags=re.MULTILINE)  # Remove any remaining headers
+                        answer_part = re.sub(r'<[^>]+>', '', answer_part)  # Remove HTML tags
+                        # Display using st.write (which should render as plain text if no markdown)
+                        st.write(answer_part)
+                        
+                        # Display sources section
+                        st.write("\nSources:\n")
+                        sources_text = parts[1].strip()
+                        # Extract URLs from sources text
+                        urls = re.findall(r'https?://[^\s\n\)]+', sources_text)
+                        for url in urls:
+                            st.write(url)
+                    else:
+                        # Clean answer content - plain text only
+                        answer_content = re.sub(r'\*\*([^*]+)\*\*', r'\1', answer_content)
+                        answer_content = re.sub(r'\*([^*]+)\*', r'\1', answer_content)
+                        answer_content = re.sub(r'^#{1,6}\s+', '', answer_content, flags=re.MULTILINE)
+                        answer_content = re.sub(r'<[^>]+>', '', answer_content)  # Remove HTML tags
+                        st.write(answer_content)
+                else:
+                    # Clean answer content - plain text only
+                    answer_content = re.sub(r'\*\*([^*]+)\*\*', r'\1', answer_content)
+                    answer_content = re.sub(r'\*([^*]+)\*', r'\1', answer_content)
+                    answer_content = re.sub(r'^#{1,6}\s+', '', answer_content, flags=re.MULTILINE)
+                    answer_content = re.sub(r'<[^>]+>', '', answer_content)  # Remove HTML tags
+                    st.write(answer_content)
                 
                 # Show sources and applicable to if available
                 if 'sources' in message and message['sources']:
@@ -264,21 +425,8 @@ def show_ip_agent_page():
                             seen_sources.add(source_key)
                             unique_sources.append(source)
                     
-                    if unique_sources:
-                        st.markdown("---")
-                        st.markdown("### 📚 Sources")
-                        for source in unique_sources:
-                            if source.get('url') and (source['url'].startswith('http') or os.path.exists(source['url'])):
-                                if source['url'].startswith('http'):
-                                    st.markdown(f"🔗 [{source['source']}]({source['url']})")
-                                else:
-                                    st.markdown(f"📄 {source['source']}")
-                        
-                        # Show Applicable To
-                        applicable_to = message.get('applicable_to', ['Texas'])
-                        if applicable_to:
-                            st.markdown("### 🏙️ Applicable To")
-                            st.markdown(", ".join(applicable_to))
+                    # Don't show separate sources section - sources are already in answer text
+                    # Sources are shown as "Sources: Source Name 1; Source Name 2" format
     
     # File uploader with expandable toolbar
     st.markdown("---")
@@ -525,6 +673,9 @@ def show_ip_agent_page():
                         st.rerun()
                 else:
                     # Regular Q&A
+                    if st.session_state.qa_system is None:
+                        st.error("❌ **Error:** QA system is not initialized. Please check the Settings page or restart the app.")
+                        st.stop()
                     result = st.session_state.qa_system.answer_question_with_context(
                         prompt, 
                         st.session_state.chat_history
@@ -544,28 +695,37 @@ def show_ip_agent_page():
                             cleaned_lines.append(line)
                         answer_text = '\n'.join(cleaned_lines).strip()
                     
-                    if result['sources'] and "Sources:" not in answer_text:
-                        seen_sources = set()
-                        unique_sources = []
+                    # Format sources as hyperlinks (ALL sources - multiple hyperlinks)
+                    if result['sources'] and "**Sources**" not in answer_text and "**Sources:**" not in answer_text and "\n\nSources:\n\n" not in answer_text and "Sources:" not in answer_text:
+                        source_urls = []
+                        seen_urls = set()
+                        # Collect ALL unique source URLs (multiple sources allowed)
                         for source in result['sources']:
-                            source_key = (source.get('url', ''), source.get('source', ''))
-                            if source_key not in seen_sources:
-                                seen_sources.add(source_key)
-                                unique_sources.append(source)
+                            url = source.get('url', '')
+                            # Include http, https, and file:// URLs
+                            if url and url.startswith(('http://', 'https://', 'file://')) and url not in seen_urls:
+                                seen_urls.add(url)
+                                source_urls.append(url)
                         
-                        if unique_sources:
-                            answer_text += "\n\n**📚 Sources:**\n"
-                            for source in unique_sources:
-                                if source.get('url'):
-                                    if source['url'].startswith('http'):
-                                        answer_text += f"- 🔗 [{source['source']}]({source['url']})\n"
-                                    elif os.path.exists(source['url']):
-                                        answer_text += f"- 📄 {source['source']}\n"
+                        if source_urls:
+                            answer_text += "\n\n[SOURCES]\n\n"
+                            # Display ALL source URLs in format: - Name: hyperlink
+                            for source in result['sources']:
+                                url = source.get('url', '')
+                                source_name = source.get('source', source.get('source_name', 'Unknown Source'))
+                                if url and url.startswith(('http://', 'https://', 'file://')):
+                                    # Format as: - Name: hyperlink
+                                    answer_text += f"- {source_name}: {url}\n\n"
                     
                     if "[Note:" in answer_text:
                         answer_text = answer_text.split("[Note:")[0].strip()
                     
-                    st.markdown(answer_text)
+                    # Remove all markdown formatting for clean display
+                    clean_answer = re.sub(r'^#{1,6}\s+', '', answer_text, flags=re.MULTILINE)  # Remove headers
+                    clean_answer = re.sub(r'\*\*([^*]+)\*\*', r'\1', clean_answer)  # Remove bold
+                    clean_answer = re.sub(r'\*([^*]+)\*', r'\1', clean_answer)  # Remove italic
+                    clean_answer = re.sub(r'^Answer:\s*', '', clean_answer, flags=re.IGNORECASE | re.MULTILINE)  # Remove Answer: prefix
+                    st.write(clean_answer)
                     
                     # Email prompt for new laws
                     if any(keyword in answer_text.lower() for keyword in ["new law", "new regulation", "update", "recent"]):
@@ -627,8 +787,31 @@ def show_regulation_explorer():
     if category_filter != "All":
         regulations = [r for r in regulations if category_filter in r.get('category', '')]
     
+    # Apply city filter
+    if city_filter != "All":
+        city_lower = city_filter.lower()
+        filtered_regulations = []
+        for r in regulations:
+            # Check city in various fields
+            city = r.get('city', '').lower()
+            source_name = r.get('source_name', '').lower()
+            category = r.get('category', '').lower()
+            url = r.get('url', '').lower()
+            
+            # Match city name in any of these fields
+            if (city_lower in city or 
+                city_lower in source_name or 
+                city_lower in category or
+                city_lower in url):
+                filtered_regulations.append(r)
+        
+        regulations = filtered_regulations
+    
     if search_query:
         # Vector search
+        if st.session_state.vector_store is None:
+            st.error("❌ **Error:** Vector store is not initialized. Please check the Settings page or restart the app.")
+            st.stop()
         search_results = st.session_state.vector_store.search(
             search_query, 
             n_results=10,
@@ -999,14 +1182,14 @@ def show_settings():
 **⚙️ Settings** - Manage your data and system configuration.
 
 **What you can do here:**
-- Load regulations from sources.csv file
+- Load regulations from finalsource11.xlsx file
 - Re-index all regulations in the vector database
 - Manage data sources and update system
 - Configure daily scraping schedule
 
 **How to use:**
-1. Edit `sources.csv` to add/modify regulation sources
-2. Click "Load Regulations from CSV" to import new sources
+1. Edit `finalsource11.xlsx` to add/modify regulation sources
+2. Click "Load Regulations from Excel" to import new sources
 3. Use "Re-Index All Regulations" if you need to rebuild the search index
     """)
     
@@ -1015,28 +1198,60 @@ def show_settings():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("Load Regulations from CSV"):
+        if st.button("Load Regulations from Excel"):
             try:
-                with st.spinner("Loading regulations from CSV..."):
+                with st.spinner("Loading regulations from Excel..."):
                     result = st.session_state.db.load_regulations_from_csv(SOURCES_FILE)
-                    st.success(f"✅ Regulations loaded! ({result['loaded']} loaded, {result['skipped']} skipped)")
                     
-                    # Automatically scrape and index new regulations
+                    # Show summary
+                    if result['existing'] > 0:
+                        st.success(f"✅ Regulations loaded! ({result['loaded']} new, {result['existing']} already exist, {result['skipped']} skipped)")
+                    else:
+                        st.success(f"✅ Regulations loaded! ({result['loaded']} loaded, {result['skipped']} skipped)")
+                    
+                    # Automatically scrape and index ONLY new regulations
                     if result['loaded'] > 0:
-                        st.info("🔄 Now scraping content and indexing in vector store...")
-                        with st.spinner("Scraping and indexing regulations (this may take a few minutes)..."):
-                            regulations = st.session_state.db.get_all_regulations()
+                        st.info(f"🔄 Now scraping and indexing {result['loaded']} new regulation(s)...")
+                        
+                        # Get only the new regulations that need indexing
+                        new_urls = result.get('new_urls', [])
+                        to_index = []
+                        for url in new_urls:
+                            reg = st.session_state.db.get_regulation_by_url(url)
+                            if reg and not reg.get('content_hash'):
+                                to_index.append(reg)
+                        
+                        total_to_index = len(to_index)
+                        
+                        if total_to_index == 0:
+                            st.info("✅ All new regulations are already indexed. No indexing needed!")
+                        elif total_to_index > 0:
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            estimated_time = total_to_index * 3  # ~3 seconds per URL on average
+                            
+                            status_text.text(f"📊 Progress: 0/{total_to_index} (Estimated time: {estimated_time//60} min {estimated_time%60} sec)")
+                            
                             indexed = 0
                             skipped_indexing = 0
+                            start_time = time.time()
                             
-                            for reg in regulations:
-                                # Check if already indexed (has content_hash means it was scraped)
-                                if reg.get('content_hash'):
-                                    continue  # Skip already indexed regulations
-                                
+                            for idx, reg in enumerate(to_index):
                                 url = reg.get('url', '')
                                 if url and (url.startswith('http://') or url.startswith('https://') or url.startswith('file://') or os.path.exists(url)):
                                     try:
+                                        # Update progress
+                                        progress = (idx + 1) / total_to_index
+                                        progress_bar.progress(progress)
+                                        
+                                        elapsed = time.time() - start_time
+                                        if idx > 0:
+                                            avg_time_per_url = elapsed / (idx + 1)
+                                            remaining = (total_to_index - idx - 1) * avg_time_per_url
+                                            status_text.text(f"📊 Progress: {idx + 1}/{total_to_index} | Indexed: {indexed} | Remaining: ~{int(remaining//60)} min {int(remaining%60)} sec")
+                                        else:
+                                            status_text.text(f"📊 Progress: {idx + 1}/{total_to_index} | Indexed: {indexed}")
+                                        
                                         content = st.session_state.scraper.fetch_url_content(url)
                                         if content and content.get('content'):
                                             chunks = st.session_state.scraper.chunk_text(content['content'])
@@ -1057,22 +1272,60 @@ def show_settings():
                                         skipped_indexing += 1
                                         continue
                             
+                            progress_bar.progress(1.0)
+                            status_text.empty()
+                            
+                            total_time = time.time() - start_time
                             if indexed > 0:
-                                st.success(f"✅ Indexed {indexed} new regulation(s) in vector store!")
+                                st.success(f"✅ Indexed {indexed} new regulation(s) in vector store! (Completed in {int(total_time//60)} min {int(total_time%60)} sec)")
                             if skipped_indexing > 0:
                                 st.warning(f"⚠️ Skipped {skipped_indexing} regulation(s) (could not fetch content)")
+                        else:
+                            st.info("✅ All regulations are already indexed. No new indexing needed.")
             except Exception as e:
                 st.error(f"Error: {str(e)}")
         
         if st.button("🔄 Re-Index All Regulations"):
             """Re-index all regulations (useful if vector store was cleared)"""
-            with st.spinner("Re-indexing all regulations (this may take several minutes)..."):
-                regulations = st.session_state.db.get_all_regulations()
+            st.info("🔄 Indexing new regulations (only unindexed ones)...")
+            
+            regulations = st.session_state.db.get_all_regulations()
+            # Filter to only regulations with URLs that can be scraped AND that haven't been indexed yet (no content_hash)
+            to_reindex = [reg for reg in regulations 
+                         if (reg.get('url', '').startswith(('http://', 'https://', 'file://')) or os.path.exists(reg.get('url', '')))
+                         and not reg.get('content_hash')]  # Only index if no content_hash (not indexed yet)
+            total_to_reindex = len(to_reindex)
+            
+            if total_to_reindex == 0:
+                st.success("✅ All regulations are already indexed! No new regulations to index.")
+            else:
+                # Calculate estimated time (~3 seconds per URL on average)
+                estimated_time = total_to_reindex * 3
+                st.info(f"📊 Found {total_to_reindex} regulation(s) to re-index. Estimated time: {estimated_time//60} min {estimated_time%60} sec")
+                
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
                 indexed = 0
-                for reg in regulations:
+                skipped_indexing = 0
+                start_time = time.time()
+                
+                for idx, reg in enumerate(to_reindex):
                     url = reg.get('url', '')
                     if url and (url.startswith('http://') or url.startswith('https://') or url.startswith('file://') or os.path.exists(url)):
                         try:
+                            # Update progress
+                            progress = (idx + 1) / total_to_reindex
+                            progress_bar.progress(progress)
+                            
+                            elapsed = time.time() - start_time
+                            if idx > 0:
+                                avg_time_per_url = elapsed / (idx + 1)
+                                remaining = (total_to_reindex - idx - 1) * avg_time_per_url
+                                status_text.text(f"📊 Progress: {idx + 1}/{total_to_reindex} | Indexed: {indexed} | Remaining: ~{int(remaining//60)} min {int(remaining%60)} sec")
+                            else:
+                                status_text.text(f"📊 Progress: {idx + 1}/{total_to_reindex} | Indexed: {indexed}")
+                            
                             content = st.session_state.scraper.fetch_url_content(url)
                             if content and content.get('content'):
                                 chunks = st.session_state.scraper.chunk_text(content['content'])
@@ -1086,9 +1339,20 @@ def show_settings():
                                     )
                                     st.session_state.db.update_regulation_hash(url, content['hash'])
                                     indexed += 1
+                            else:
+                                skipped_indexing += 1
                         except Exception as e:
+                            skipped_indexing += 1
                             continue
-                st.success(f"✅ Re-indexed {indexed} regulations!")
+                
+                progress_bar.progress(1.0)
+                status_text.empty()
+                
+                total_time = time.time() - start_time
+                if indexed > 0:
+                    st.success(f"✅ Re-indexed {indexed} regulation(s)! (Completed in {int(total_time//60)} min {int(total_time%60)} sec)")
+                if skipped_indexing > 0:
+                    st.warning(f"⚠️ Skipped {skipped_indexing} regulation(s) (could not fetch content)")
         
         st.markdown("---")
         st.subheader("Daily Scraping")
@@ -1115,17 +1379,11 @@ def show_settings():
                     st.info("No new updates detected.")
     
     with col2:
-        st.subheader("Configuration")
+        st.subheader("System Status")
         st.info("""
-        **OpenAI API Key**: Set in .env file or environment variable
+        **System Status**: All systems operational
         
-        **Email Settings**: Configure SMTP in .env file for email alerts
-        
-        **Database**: SQLite database at regulations.db
-        
-        **Vector Store**: ChromaDB at ./chroma_db
-        
-        **Daily Scraper**: Run `python daily_scraper.py` to start daily updates
+        **Data Management**: Use the buttons on the left to manage regulations and update the index.
         """)
     
     st.markdown("---")

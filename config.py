@@ -73,5 +73,5 @@ LEGAL_DISCLAIMER = (
     "Always perform your own due diligence."
 )
 
-# Data Sources
-SOURCES_FILE = "sources.csv"
+# Data Sources - REQUIRED: finalsource11.xlsx with columns: category, city, level, hyperlink
+SOURCES_FILE = "finalsource11.xlsx"

@@ -68,6 +68,27 @@ class RegulationDB:
             )
         """)
         
+        # Alerts log table for duplicate prevention
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS alerts_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                city TEXT NOT NULL,
+                regulation_title TEXT NOT NULL,
+                category TEXT,
+                change_hash TEXT NOT NULL,
+                date_emailed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                regulation_id INTEGER,
+                update_id INTEGER,
+                UNIQUE(city, regulation_title, category, change_hash)
+            )
+        """)
+        
+        # Add city column to regulations if it doesn't exist (for better tracking)
+        try:
+            cursor.execute("ALTER TABLE regulations ADD COLUMN city TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        
         conn.commit()
         conn.close()
     
@@ -222,6 +243,15 @@ class RegulationDB:
         conn.close()
         return emails
     
+    def get_all_subscribers(self) -> List[str]:
+        """Get all active subscribers (for Texas-Statewide alerts)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT email FROM email_alerts WHERE active = 1")
+        emails = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return emails
+    
     def save_compliance_check(self, document_name: str, is_compliant: bool, 
                              issues_found: str, result_summary: str):
         """Save compliance check result"""
@@ -235,51 +265,112 @@ class RegulationDB:
         conn.close()
     
     def load_regulations_from_csv(self, csv_path: str):
-        """Load regulations from CSV file - supports both old and new formats"""
-        df = pd.read_csv(csv_path)
+        """Load regulations from CSV or Excel file - REQUIRED: sources.xlsx with columns: category, city, level, hyperlink
+        Returns: {'loaded': count of new regulations, 'skipped': count of invalid/skipped, 'existing': count of already existing, 'new_urls': list of new URLs}
+        """
         loaded = 0
         skipped = 0
+        existing = 0
+        new_urls = []
+        
+        # Check if file is Excel (.xlsx) or CSV
+        if csv_path.endswith('.xlsx') or csv_path.endswith('.xls'):
+            try:
+                # Read Excel file
+                df = pd.read_excel(csv_path, engine='openpyxl')
+            except ImportError:
+                # Try with xlrd for older Excel files
+                try:
+                    df = pd.read_excel(csv_path, engine='xlrd')
+                except:
+                    raise ImportError("Please install openpyxl: pip install openpyxl")
+            except Exception as e:
+                raise Exception(f"Error reading Excel file: {str(e)}")
+        else:
+            # Read CSV file
+            df = pd.read_csv(csv_path)
+        
+        # Normalize column names (case-insensitive, handle variations)
+        df.columns = df.columns.str.strip().str.lower()
+        
+        # Map column names to standard names
+        column_mapping = {
+            'hyperlink': 'hyperlink',
+            'url': 'hyperlink',
+            'link': 'hyperlink',
+            'category': 'category',
+            'regulation category': 'category',
+            'regulation_category': 'category',
+            'city': 'city',
+            'city_name': 'city',
+            'level': 'level',
+            'type': 'level',
+            'law_name': 'source_name',
+            'source_name': 'source_name',
+            'source name': 'source_name',
+            'name': 'source_name'
+        }
+        
+        # Rename columns to standard names
+        for old_col in df.columns:
+            for key, value in column_mapping.items():
+                if old_col == key or old_col.replace('_', ' ').replace('-', ' ') == key.replace('_', ' '):
+                    if value not in df.columns or df.columns.get_loc(value) == df.columns.get_loc(old_col):
+                        df.rename(columns={old_col: value}, inplace=True)
+                    break
+        
+        # REQUIRED COLUMNS: category, level, hyperlink (city is optional, defaults to Texas-Statewide)
+        required_columns = ['category', 'level', 'hyperlink']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        
+        if missing_columns:
+            raise ValueError(f"Missing required columns in sources file: {', '.join(missing_columns)}. Required columns: category, level, hyperlink (city is optional)")
         
         for _, row in df.iterrows():
-            # Support new format: category, city_name, law_name, hyperlink
-            if "hyperlink" in df.columns or "hyperlink" in str(row).lower():
-                url = str(row.get("hyperlink", row.get("URL", ""))).strip()
-                law_name = str(row.get("law_name", "")).strip()
-                category = str(row.get("category", "")).strip()
-                city_name = str(row.get("city_name", "Texas-Statewide")).strip()
-                
-                # Use law_name as source_name, or construct from category and city
-                if law_name:
-                    source_name = law_name
-                else:
-                    source_name = f"{category} - {city_name}"
-                
-                # Determine type from category
+            # Get required columns
+            url = str(row.get("hyperlink", "")).strip()
+            category = str(row.get("category", "")).strip()
+            city = str(row.get("city", "Texas-Statewide")).strip() if "city" in df.columns else "Texas-Statewide"
+            level = str(row.get("level", "")).strip()
+            
+            # Get optional source_name if available
+            source_name = str(row.get("source_name", "")).strip()
+            if not source_name:
+                # Construct source_name from category and city
+                source_name = f"{category} - {city}" if category and city else "Unknown Source"
+            
+            # Determine type from level
+            level_lower = level.lower()
+            if 'federal' in level_lower:
+                reg_type = "Federal"
+            elif 'state' in level_lower or 'texas' in level_lower:
+                reg_type = "State"
+            elif 'city' in level_lower or 'local' in level_lower:
+                reg_type = "City"
+            else:
+                # Try to infer from category or city
                 if category.lower() == "federal":
                     reg_type = "Federal"
-                elif category.lower() == "state":
-                    reg_type = "State"
-                elif category.lower() == "city":
+                elif city and city != "Texas-Statewide":
                     reg_type = "City"
                 else:
-                    reg_type = "Other"
-                
-            else:
-                # Old format: Source Name, URL, Type, Regulation Category
-                url = str(row.get("URL", "")).strip()
-                source_name = str(row.get("Source Name", "")).strip()
-                reg_type = str(row.get("Type", "")).strip()
-                category = str(row.get("Regulation Category", "Other")).strip()
-                city_name = "Texas-Statewide"
+                    reg_type = "State"
             
             # Skip invalid URLs (allow http, https, and file paths)
             if not url or (not url.startswith(('http://', 'https://', 'file://')) and not os.path.exists(url)):
                 skipped += 1
                 continue
             
+            # Check if regulation already exists
+            existing_reg = self.get_regulation_by_url(url)
+            if existing_reg:
+                # Regulation already exists - skip adding it again
+                existing += 1
+                continue
+            
             # Add city to category if it's city-specific
-            if city_name and city_name != "Texas-Statewide":
-                category = f"{category} - {city_name}"
+            if city and city != "Texas-Statewide":
+                category = f"{category} - {city}"
             
             self.add_regulation(
                 source_name=source_name,
@@ -288,5 +379,11 @@ class RegulationDB:
                 category=category
             )
             loaded += 1
+            new_urls.append(url)
         
-        return {"loaded": loaded, "skipped": skipped}
+        return {
+            "loaded": loaded,
+            "skipped": skipped,
+            "existing": existing,
+            "new_urls": new_urls
+        }
