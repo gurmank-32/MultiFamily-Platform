@@ -29,13 +29,19 @@ class RegulationVectorStore:
             try:
                 from sentence_transformers import SentenceTransformer
                 import torch
+                # Force CPU device for Streamlit Cloud compatibility (no GPU support)
+                torch.set_default_device('cpu')
                 # Using a lightweight, fast model that works well for legal text
-                # Explicitly set device to CPU for Streamlit Cloud compatibility
-                device = 'cpu'
-                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
+                # Ensure model is on CPU
+                self.embedding_model = self.embedding_model.to('cpu')
                 print("Using free embeddings (Sentence Transformers) on CPU")
             except ImportError:
                 print("Warning: sentence-transformers not installed. Install with: pip install sentence-transformers")
+                self.use_free_embeddings = False
+            except Exception as e:
+                print(f"Warning: Error initializing SentenceTransformer: {str(e)}")
+                print("Attempting to continue without free embeddings...")
                 self.use_free_embeddings = False
     
     def create_embedding(self, text: str) -> List[float]:
@@ -76,11 +82,13 @@ class RegulationVectorStore:
                     try:
                         from sentence_transformers import SentenceTransformer
                         import torch
-                        device = 'cpu'
-                        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+                        torch.set_default_device('cpu')
+                        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
+                        self.embedding_model = self.embedding_model.to('cpu')
                         self.use_free_embeddings = True
                         return self.create_embedding(text)  # Retry with free model
-                    except:
+                    except Exception as e:
+                        print(f"Error initializing free embedding model fallback: {str(e)}")
                         pass
                 return None
     
