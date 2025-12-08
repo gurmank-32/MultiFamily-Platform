@@ -28,9 +28,12 @@ class RegulationVectorStore:
         if use_free_embeddings:
             try:
                 from sentence_transformers import SentenceTransformer
+                import torch
                 # Using a lightweight, fast model that works well for legal text
-                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-                print("Using free embeddings (Sentence Transformers)")
+                # Explicitly set device to CPU for Streamlit Cloud compatibility
+                device = 'cpu'
+                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+                print("Using free embeddings (Sentence Transformers) on CPU")
             except ImportError:
                 print("Warning: sentence-transformers not installed. Install with: pip install sentence-transformers")
                 self.use_free_embeddings = False
@@ -54,7 +57,9 @@ class RegulationVectorStore:
                     # Try to initialize free model if not already done
                     if not self.embedding_model:
                         from sentence_transformers import SentenceTransformer
-                        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+                        import torch
+                        device = 'cpu'
+                        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
                         self.use_free_embeddings = True
                         return self.create_embedding(text)  # Retry with free model
                     return None
@@ -70,7 +75,9 @@ class RegulationVectorStore:
                 if not self.embedding_model:
                     try:
                         from sentence_transformers import SentenceTransformer
-                        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+                        import torch
+                        device = 'cpu'
+                        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
                         self.use_free_embeddings = True
                         return self.create_embedding(text)  # Retry with free model
                     except:
