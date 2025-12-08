@@ -29,12 +29,11 @@ class RegulationVectorStore:
             try:
                 from sentence_transformers import SentenceTransformer
                 import torch
+                import os
                 # Force CPU device for Streamlit Cloud compatibility (no GPU support)
-                torch.set_default_device('cpu')
+                os.environ['CUDA_VISIBLE_DEVICES'] = ''  # Disable CUDA
                 # Using a lightweight, fast model that works well for legal text
                 self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
-                # Ensure model is on CPU
-                self.embedding_model = self.embedding_model.to('cpu')
                 print("Using free embeddings (Sentence Transformers) on CPU")
             except ImportError:
                 print("Warning: sentence-transformers not installed. Install with: pip install sentence-transformers")
@@ -64,8 +63,9 @@ class RegulationVectorStore:
                     if not self.embedding_model:
                         from sentence_transformers import SentenceTransformer
                         import torch
-                        device = 'cpu'
-                        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+                        import os
+                        os.environ['CUDA_VISIBLE_DEVICES'] = ''  # Disable CUDA
+                        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
                         self.use_free_embeddings = True
                         return self.create_embedding(text)  # Retry with free model
                     return None
@@ -82,9 +82,9 @@ class RegulationVectorStore:
                     try:
                         from sentence_transformers import SentenceTransformer
                         import torch
-                        torch.set_default_device('cpu')
+                        import os
+                        os.environ['CUDA_VISIBLE_DEVICES'] = ''  # Disable CUDA
                         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
-                        self.embedding_model = self.embedding_model.to('cpu')
                         self.use_free_embeddings = True
                         return self.create_embedding(text)  # Retry with free model
                     except Exception as e:
