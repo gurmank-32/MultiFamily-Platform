@@ -5,9 +5,8 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from database import RegulationDB
-from config import SMTP_SERVER, SMTP_PORT, SMTP_EMAIL, SMTP_PASSWORD, LEGAL_DISCLAIMER, get_secret
+from config import SMTP_SERVER, SMTP_PORT, SMTP_EMAIL, SMTP_PASSWORD, LEGAL_DISCLAIMER
 from typing import List, Dict
-from datetime import datetime
 
 class EmailAlertSystem:
     def __init__(self):
@@ -17,16 +16,14 @@ class EmailAlertSystem:
         """Send welcome email when user subscribes"""
         try:
             msg = MIMEMultipart()
-            # Use intelligenceplatformupdate@gmail.com as sender
-            sender_email = "intelligenceplatformupdate@gmail.com"
-            msg['From'] = sender_email
+            msg['From'] = SMTP_EMAIL
             msg['To'] = email
             msg['Subject'] = f"Welcome to Housing Regulation Alerts for {city}"
             
             unsubscribe_link = f"http://localhost:8501/unsubscribe?email={email}&city={city}"
             
             body = f"""
-Welcome to the Housing Regulation Compliance Agent!
+Welcome to Intelligence Platform!
 
 You have successfully subscribed to receive email alerts for {city} housing regulation updates.
 
@@ -42,19 +39,16 @@ Or visit the Email Alerts page in the app and unsubscribe there.
 {LEGAL_DISCLAIMER}
 
 ---
-Housing Regulation Compliance Agent
+Intelligence Platform
 """
             
             msg.attach(MIMEText(body, 'plain'))
             
-            # Use intelligenceplatformupdate@gmail.com credentials
-            sender_password = SMTP_PASSWORD if SMTP_EMAIL == sender_email else get_secret("SMTP_PASSWORD", "")
-            
-            if sender_password and sender_password != "your_app_password_here":
+            if SMTP_EMAIL and SMTP_PASSWORD and SMTP_EMAIL != "your_email@gmail.com" and SMTP_PASSWORD != "your_app_password_here":
                 try:
                     server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
                     server.starttls()
-                    server.login(sender_email, sender_password)
+                    server.login(SMTP_EMAIL, SMTP_PASSWORD)
                     server.send_message(msg)
                     server.quit()
                     return True
@@ -74,134 +68,189 @@ Housing Regulation Compliance Agent
             return False
     
     def send_update_alert(self, email: str, update: Dict):
-        """Send email alert for regulation update with exact format as specified"""
+        """Send email alert for regulation update"""
         try:
-            import json
-            import ast
+            from datetime import datetime
+            
+            msg = MIMEMultipart()
+            msg['From'] = SMTP_EMAIL
+            msg['To'] = email
+            msg['Subject'] = f"Housing Regulation Update: {update['source_name']}"
             
             # Get affected cities
             affected_cities = update.get('affected_cities', [])
             if isinstance(affected_cities, str):
                 try:
+                    import json
                     affected_cities = json.loads(affected_cities)
                 except:
-                    try:
-                        affected_cities = ast.literal_eval(affected_cities)
-                    except:
-                        affected_cities = [affected_cities] if affected_cities else []
+                    affected_cities = [affected_cities] if affected_cities else []
             
-            if not isinstance(affected_cities, list):
-                affected_cities = [affected_cities] if affected_cities else []
+            # Use first city or default
+            city = affected_cities[0] if affected_cities else "Texas-Statewide"
             
-            # Get summary and limit to 3-5 sentences
-            summary = update.get('summary', update.get('update_summary', 'No summary available.'))
-            summary_sentences = summary.split('. ')
-            if len(summary_sentences) > 5:
-                summary_sentences = summary_sentences[:5]
-            short_summary = '. '.join(summary_sentences).strip()
-            if not short_summary.endswith('.'):
-                short_summary += '.'
+            # Get date
+            update_date = update.get('detected_at', datetime.now().strftime('%Y-%m-%d'))
+            if update_date:
+                try:
+                    # Format date if it's a datetime string
+                    if ' ' in str(update_date):
+                        update_date = str(update_date).split(' ')[0]
+                except:
+                    pass
             
-            # Get regulation title
-            regulation_title = update.get('source_name', 'Regulation Update')
+            # Get source name - map demo name
+            source_name = update.get('source_name', 'Unknown')
+            if source_name == "Dallas Rent Control 2025 (DEMO)":
+                source_name = "Dallas Rent Control Policy- Maximum Rent Increase Cap"
             
             # Get category
             category = update.get('category', 'N/A')
+            if category == "Rent Control":
+                category = "Rent Caps"
+            
+            # Get update summary
+            summary = update.get('summary', update.get('update_summary', 'No summary available.'))
             
             # Get URL
             url = update.get('url', 'N/A')
             
-            # Get date
-            detected_date = update.get('detected_at', datetime.now().strftime('%Y-%m-%d'))
-            if isinstance(detected_date, str):
-                try:
-                    # Try to parse and format
-                    date_obj = datetime.strptime(detected_date, '%Y-%m-%d %H:%M:%S')
-                    date_str = date_obj.strftime('%Y-%m-%d')
-                except:
-                    date_str = detected_date
-            else:
-                date_str = detected_date.strftime('%Y-%m-%d') if isinstance(detected_date, datetime) else str(detected_date)
-            
-            # Check if this email is subscribed to any of the affected cities
-            city_to_send = None
-            for city in affected_cities:
-                subscribers = self.db.get_subscribers_for_city(city)
-                if email in subscribers:
-                    city_to_send = city
-                    break
-            
-            # Only send if user is subscribed to one of the affected cities
-            if city_to_send:
-                # Generate short practical impact (3-5 sentences max) - focus on what changed + why property managers care
-                practical_impact = f"This regulation update affects property managers and leasing professionals in {city_to_send}. You need to review your lease documents, update property management policies, and ensure staff are trained on the new requirements. The changes impact lease agreement compliance and tenant relations."
-                
-                msg = MIMEMultipart()
-                # Use intelligenceplatformupdate@gmail.com as sender
-                sender_email = "intelligenceplatformupdate@gmail.com"
-                msg['From'] = sender_email
-                msg['To'] = email
-                msg['Subject'] = f"HOUSING REGULATION UPDATE ALERT - {city_to_send}"
-                
-                # Build email body with EXACT format as specified
-                body = f"""HOUSING REGULATION UPDATE ALERT
+            # Format email body with exact layout requested
+            body = f"""================================================================================
 
-Real Estate Intelligence Platform
+HOUSING REGULATION UPDATE ALERT
 
-CITY: {city_to_send}
+Real Estate Platform
 
-REGULATION UPDATE: {regulation_title}
+================================================================================
+
+
+
+CITY: {city}
+
+REGULATION: {source_name}
 
 CATEGORY: {category}
 
-DATE: {date_str}
+DATE: {update_date}
 
-SUMMARY:
 
-{short_summary}
 
-WHY IT MATTERS:
+================================================================================
 
-{practical_impact}
+WHAT CHANGED?
 
-SOURCE: {url}
+================================================================================
 
-💡 Notes:
+{summary}
 
-No legal disclaimers unless you choose to add a one-liner at the bottom later
-Focus only on: what changed + why property managers care
-Keep summaries to 3–5 sentences max
-Only one hyperlink — the official source
-Works perfectly for all four Texas cities
+
+
+
+
+================================================================================
+
+WHO IS IMPACTED?
+
+================================================================================
+
+
+
+This regulation update affects Leasing Managers and Property Managers in {city}.
+
+You need to be aware of these changes as they impact:
+
+- Lease agreement compliance requirements
+
+- Tenant relations and policies
+
+- Property management procedures
+
+- Legal obligations and disclosures
+
+
+
+================================================================================
+
+WHAT ACTION SHOULD YOU TAKE?
+
+================================================================================
+
+
+
+1. Review the full regulation text using the source link below
+
+2. Update your lease documents and property management policies accordingly
+
+3. Train your staff on the new requirements
+
+4. Ensure all new leases comply with the updated regulation
+
+5. Consult with legal counsel if you have questions about implementation
+
+
+
+================================================================================
+
+SOURCE INFORMATION
+
+================================================================================
+
+
+
+Official Source: {source_name}
+
+Category: {category}
+
+Direct Link: {url}
+
+
+
+Please review the official source document for complete details and legal text.
+
+
+
+================================================================================
+
+
+
+⚠️ **LEGAL DISCLAIMER:** This tool is for informational purposes only. It is not legal advice. No legal accountability is assumed. Consult qualified legal counsel before making decisions. Always perform your own due diligence.
+
+
+
+---
+
+You are receiving this alert because you subscribed to receive updates for {city}.
+
+
+
+To manage your subscriptions, visit the Email Alerts page in the Real Estate Platform.
+
+
+
+This is an automated alert from the Real Estate Platform.
 """
-                
-                msg.attach(MIMEText(body, 'plain'))
-                
-                # Use intelligenceplatformupdate@gmail.com credentials
-                # Get password from config (should be set in .env or secrets)
-                sender_password = SMTP_PASSWORD if SMTP_EMAIL == sender_email else get_secret("SMTP_PASSWORD", "")
-                
-                if sender_password and sender_password != "your_app_password_here":
-                    try:
-                        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-                        server.starttls()
-                        server.login(sender_email, sender_password)
-                        server.send_message(msg)
-                        server.quit()
-                        return True
-                    except Exception as smtp_error:
-                        print(f"SMTP error: {str(smtp_error)}")
-                        # Save email to file as backup
-                        self._save_email_to_file(email, msg['Subject'], body)
-                        return True
-                else:
-                    # Save email to file instead
-                    self._save_email_to_file(email, msg['Subject'], body)
-                    print(f"Email not configured. Saved update alert to file: emails/update_{update['source_name'].replace(' ', '_')}.txt")
-                    return True  # Return True so UI shows success
+            
+            msg.attach(MIMEText(body, 'plain'))
+            
+            if SMTP_EMAIL and SMTP_PASSWORD and SMTP_EMAIL != "your_email@gmail.com" and SMTP_PASSWORD != "your_app_password_here":
+                try:
+                    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                    server.starttls()
+                    server.login(SMTP_EMAIL, SMTP_PASSWORD)
+                    server.send_message(msg)
+                    server.quit()
+                    return True
+                except Exception as smtp_error:
+                    print(f"SMTP error: {str(smtp_error)}")
+                    # Save email to file as backup
+                    self._save_email_to_file(email, f"Housing Regulation Update: {update['source_name']}", body)
+                    return True
             else:
-                # User not subscribed to any affected city
-                return False
+                # Save email to file instead
+                self._save_email_to_file(email, f"Housing Regulation Update: {update['source_name']}", body)
+                print(f"Email not configured. Saved update alert to file: emails/update_{update['source_name'].replace(' ', '_')}.txt")
+                return True  # Return True so UI shows success
         
         except Exception as e:
             print(f"Error sending email: {str(e)}")
@@ -234,127 +283,16 @@ Works perfectly for all four Texas cities
     
     def notify_subscribers(self, update: Dict):
         """Notify all subscribers for affected cities"""
-        import json
-        import ast
-        
         affected_cities = update.get('affected_cities', [])
-        
-        # Handle if affected_cities is a string (JSON or list string)
-        if isinstance(affected_cities, str):
-            try:
-                # Try to parse as JSON first
-                affected_cities = json.loads(affected_cities)
-            except:
-                try:
-                    # Try to parse as Python literal
-                    affected_cities = ast.literal_eval(affected_cities)
-                except:
-                    # If parsing fails, treat as single city
-                    affected_cities = [affected_cities] if affected_cities else []
-        
-        # Ensure it's a list
-        if not isinstance(affected_cities, list):
-            affected_cities = [affected_cities] if affected_cities else []
-        
         notified = []
-        
-        print(f"DEBUG: Notifying subscribers for cities: {affected_cities}")
         
         for city in affected_cities:
             subscribers = self.db.get_subscribers_for_city(city)
-            print(f"DEBUG: Found {len(subscribers)} subscribers for {city}: {subscribers}")
             for email in subscribers:
                 if self.send_update_alert(email, update):
                     notified.append(email)
-                    print(f"DEBUG: Sent alert to {email}")
         
         return notified
-    
-    def send_regulation_update_alert(self, email_list: List[str], city: str, regulation_title: str, 
-                                     category: str, url: str, update_summary: str, date_detected: datetime):
-        """Send regulation update alert with exact format as specified"""
-        from config import SMTP_SERVER, SMTP_PORT, SMTP_EMAIL, SMTP_PASSWORD, get_secret
-        
-        # Use intelligenceplatformupdate@gmail.com as sender
-        sender_email = "intelligenceplatformupdate@gmail.com"
-        
-        for email in email_list:
-            try:
-                msg = MIMEMultipart()
-                msg['From'] = sender_email
-                msg['To'] = email
-                msg['Subject'] = f"HOUSING REGULATION UPDATE ALERT - {city}"
-                
-                # Format date
-                date_str = date_detected.strftime('%Y-%m-%d') if isinstance(date_detected, datetime) else str(date_detected)
-                
-                # Generate short practical impact (3-5 sentences max) - focus on what changed + why property managers care
-                # Keep it concise and practical
-                practical_impact = f"This regulation update affects property managers and leasing professionals in {city}. You need to review your lease documents, update property management policies, and ensure staff are trained on the new requirements. The changes impact lease agreement compliance and tenant relations."
-                
-                # Limit summary to 3-5 sentences max
-                summary_sentences = update_summary.split('. ')
-                if len(summary_sentences) > 5:
-                    summary_sentences = summary_sentences[:5]
-                short_summary = '. '.join(summary_sentences).strip()
-                if not short_summary.endswith('.'):
-                    short_summary += '.'
-                
-                # Build email body with EXACT format as specified
-                body = f"""HOUSING REGULATION UPDATE ALERT
-
-Real Estate Intelligence Platform
-
-CITY: {city}
-
-REGULATION UPDATE: {regulation_title}
-
-CATEGORY: {category}
-
-DATE: {date_str}
-
-SUMMARY:
-
-{short_summary}
-
-WHY IT MATTERS:
-
-{practical_impact}
-
-SOURCE: {url}
-
-💡 Notes:
-
-No legal disclaimers unless you choose to add a one-liner at the bottom later
-Focus only on: what changed + why property managers care
-Keep summaries to 3–5 sentences max
-Only one hyperlink — the official source
-Works perfectly for all four Texas cities
-"""
-                
-                msg.attach(MIMEText(body, 'plain'))
-                
-                # Use intelligenceplatformupdate@gmail.com credentials
-                sender_password = SMTP_PASSWORD if SMTP_EMAIL == sender_email else get_secret("SMTP_PASSWORD", "")
-                
-                if sender_password and sender_password != "your_app_password_here":
-                    try:
-                        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-                        server.starttls()
-                        server.login(sender_email, sender_password)
-                        server.send_message(msg)
-                        server.quit()
-                        print(f"    [OK] Sent to {email}")
-                    except Exception as smtp_error:
-                        print(f"    [ERROR] SMTP error for {email}: {str(smtp_error)}")
-                        self._save_email_to_file(email, msg['Subject'], body)
-                else:
-                    # Save to file if SMTP not configured
-                    self._save_email_to_file(email, msg['Subject'], body)
-                    print(f"    [SAVED] Email saved to file for {email}")
-                    
-            except Exception as e:
-                print(f"    [ERROR] Failed to send to {email}: {str(e)}")
     
     def send_daily_summary(self, email: str, city: str):
         """Send daily summary report for a city"""
@@ -407,7 +345,7 @@ All regulations are up to date. We'll continue monitoring and notify you immedia
 {LEGAL_DISCLAIMER}
 
 ---
-Housing Regulation Compliance Agent
+Intelligence Platform
 Daily Summary Report
 """
             else:
@@ -441,7 +379,7 @@ Date: {datetime.now().strftime('%Y-%m-%d')}
 {LEGAL_DISCLAIMER}
 
 ---
-Housing Regulation Compliance Agent
+Intelligence Platform
 Daily Summary Report
 
 To unsubscribe, visit the Email Alerts page in the app.

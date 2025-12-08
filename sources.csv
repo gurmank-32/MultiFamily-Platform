@@ -1,0 +1,71 @@
+Source Name,URL,Type,Regulation Category
+HUD Fair Housing,https://www.hud.gov/program_offices/fair_housing_equal_opp,Federal,Fair Housing
+DOJ Civil Rights (Housing),https://www.justice.gov/crt/housing-and-civil-enforcement-section,Federal,Fair Housing
+IRS,Internal Revenue Service | An official website of the United States government,Federal,Federal
+Lexis Nexis,Welcome to LexisNexis - Choose Your Path,Federal/State,Federal/State
+Federal Register,https://www.federalregister.gov/,Federal,Federal Housing Updates
+GovInfo (GPO),https://www.govinfo.gov/,Federal,Federal Housing Updates
+Texas Department of Housing & Community Affairs (TDHCA),https://www.tdhca.state.tx.us/,State,"LIHTC, Rent Caps, Housing Programs"
+Texas Administrative Code (TAC),https://www.sos.state.tx.us/tac/index.shtml,State,State Housing Rules
+Texas Legislature Online,https://capitol.texas.gov/,State,Legislative Bills
+Texas Attorney General,https://www.texasattorneygeneral.gov/,State,Legal Opinions
+Dallas City Code (Municode),https://library.municode.com/tx/dallas/codes/code_of_ordinances,Local,"Zoning, Rental, Safety Codes"
+Houston City Code (Municode),https://library.municode.com/tx/houston/codes/code_of_ordinances,Local,"Landlord/Tenant, Zoning"
+Austin City Code (Municode),https://library.municode.com/tx/austin/codes/code_of_ordinances,Local,"Rental Registration, Housing"
+San Antonio City Code (Municode),https://library.municode.com/tx/san_antonio/codes/code_of_ordinances,Local,"Housing, Zoning"
+BillTrack50,https://www.billtrack50.com/,3rd Party,Bill Tracking
+OpenStates,https://openstates.org/,3rd Party,Legislative Tracking
+Law Alert Now,https://lawalertnow.com/,3rd Party,Local Ordinance Alerts
+Regology,https://www.regology.com/,3rd Party,Automated Compliance
+IRS (Federal) - API Client ID,IRS: Get an API client ID,Federal,IRS e-Services & API
+IRS - E-Services,IRS: E-Services,Federal,E-Services
+IRS - IRIS,IRS: E-file returns with IRIS,Federal,IRIS e-filing
+IRS - TIN Matching,IRS: TIN Matching service,Federal,TIN Matching
+CalHFA (homepage),CalHFA,State,CalHFA programs
+CalHFA - Asset Management / Compliance & Reporting,CalHFA: Asset Management / Compliance & Reporting,State,Compliance & Reporting
+CalHFA Loan Programs Handbook,CalHFA Loan Programs Handbook,State,Loan Programs (PDF)
+Dallas Rent Control,https://guides.sll.texas.gov/landlord-tenant-law/rent?utm_source=chatgpt.com,Local,Rent Control
+Dallas Rent Control,https://www.steadily.com/blog/rent-increase-laws-regulations-dallas-tx?utm_source=chatgpt.com,Local,Rent Control
+Dallas Rent Control,https://www.sixfifty.com/pro-bono/blog/renters-rights-in-dallas-texas/?utm_source=chatgpt.com,Local,Rent Control
+Dallas Rent Control,https://www.sll.texas.gov/faqs/rent-increase/?utm_source=chatgpt.com,Local,Rent Control
+Dallas Rent Control,https://www.texasattorneygeneral.gov/consumer-protection/home-real-estate-and-travel/renters-rights?utm_source=chatgpt.com,Local,Rent Control
+Dallas Zonings,https://dallascityhall.com/departments/pnv/Pages/Zoning-Resources.aspx?utm_source=chatgpt.com,Local,Zoning
+Dallas Zonings,https://gisservices-dallasgis.opendata.arcgis.com/maps/647e8235fe18438d93012b58d910497c?utm_source=chatgpt.com,Local,Zoning
+Dallas Zonings,https://gis.dallascityhall.com/arcgis/rest/services/sdc_public/Zoning/MapServer?utm_source=chatgpt.com,Local,Zoning
+Dallas Zonings,https://dallascityhall.com/departments/sustainabledevelopment/planning/Pages/zoning_use_chart_index.aspx?utm_source=chatgpt.com,Local,Zoning
+Dallas Zonings,https://dallascityhall.com/departments/sustainabledevelopment/Pages/DallasNow.aspx?utm_source=chatgpt.com,Local,Zoning
+Dallas Zonings,https://www.dallascounty.org/departments/plandev/zoning.php?utm_source=chatgpt.com,Local,Zoning
+Dallas Zonings,https://zoningpoint.com/texas/dallas-county/dallas/?utm_source=chatgpt.com,Local,Zoning
+San Antonio Rent Control,Tenants Rights and Resources | City of San Antonio,Local,Rent Control
+San Antonio Rent Control,Renters' Resources - City of San Antonio,Local,Renters' Resources
+San Antonio Rent Control,A Guide for Renters in San Antonio,Local,A Guide for Renters
+San Antonio Rent Control,Texas Rent Control Laws (2025) | The Complete Guide,Local,Texas Rent Control Laws (2025)
+San Antonio Zonings,https://library.municode.com/tx/san_antonio/codes/code_of_ordinances,Local,Zoning
+San Antonio Zonings,https://www.sa.gov/Directory/Departments/DSD/Constructing/Land-Development/Zoning?utm_source=chatgpt.com,Local,Zoning
+San Antonio Zonings,Unified Development Code (UDC) - City of San Antonio,Local,Zoning
+San Antonio Zonings,Maps - City of San Antonio,Local,Zoning/Maps
+San Antonio Zonings,Understanding Real Estate Zoning Laws in Texas - Reeves Legal,Local,Zoning - Guide
+Austin Rent Control,https://www.austintexas.gov/page/tenant-stabilization-and-renters-rights?utm_source=chatgpt.com,Local,Rent Control
+Austin Rent Control,https://www.austintexas.gov/page/tenant-notification-and-relocation-ordinance?utm_source=chatgpt.com,Local,Rent Control/Relocation
+Austin Zonings,https://www.austintexas.gov/page/zoning-resources-site-regulations?utm_source=chatgpt.com,Local,Zoning
+Austin Zonings,https://library.municode.com/tx/austin/codes/code_of_ordinances?utm_source=chatgpt.com,Local,Zoning
+Austin Zonings,https://library.municode.com/tx/austin/codes/land_development_code?utm_source=chatgpt.com,Local,Land Development Code
+Austin Zonings,https://www.austintexas.gov/sites/default/files/files/Planning/zoning_guide.pdf?utm_source=chatgpt.com,Local,Zoning Guide
+Houston Rent Control,https://guides.sll.texas.gov/landlord-tenant-law/rent?,Local,Rent Control
+Houston Rent Control,https://www.sixfifty.com/pro-bono/blog/renters-rights-in-houston-texas/,Local,Renters Rights
+Houston Rent Control,https://www.hemlane.com/resources/texas-rent-control-laws/,Local,Rent Control Overview
+Houston Zonings,https://www.houstontx.gov/planning/DevelopRegs/docs_pdfs/No-Zoning-Letter-and-Boundary-Map-2025.pdf?,Local,Zoning
+Houston Zonings,https://kinder.rice.edu/urbanedge/houston-doesnt-have-zoning-there-are-workarounds?,Local/Article,Zoning - Analysis
+Houston Zonings,https://www.houstonchronicle.com/news/houston-texas/article/doesn-t-houston-zoning-laws-18653170.php,Local/Article,Zoning - Coverage
+Houston Zonings,https://www.partneresi.com/locations/houston-texas/houston-texas-zoning-reports/,Local,Zoning Reports
+Legal Content- JD Supra,https://www.jdsupra.com/topics/texas/housing-developers/?utm_source=chatgpt.com,Legal/3rd Party,Texas Housing Analysis
+Legal Content- JD Supra,https://www.jdsupra.com/topics/affordable-housing/texas/new-legislation/?utm_source=chatgpt.com,Legal/3rd Party,Affordable Housing
+Legal Content- JD Supra,https://www.jdsupra.com/legalnews/analysis-of-texas-house-bill-21-3575009/?utm_source=chatgpt.com,Legal/3rd Party,Legislation Analysis
+Legal Content- JD Supra,https://www.jdsupra.com/topics/zoning-laws/texas/housing-market/?utm_source=chatgpt.com,Legal/3rd Party,Zoning Laws
+Legal Content- JD Supra,https://www.jdsupra.com/post/contentViewerEmbed.aspx?fid=f10fdc9c-a62b-4afc-99ea-1b9cc28f2bf2&utm_source=chatgpt.com,Legal/3rd Party,Article Embed
+Legislation Trackers,https://www.govtrack.us/,3rd Party,Legislation Tracking
+Legislation Trackers,https://www.govtrack.us/congress/bills/browse?text=housing,3rd Party,Housing Bills
+Legislation Trackers,https://www.govtrack.us/congress/members,3rd Party,Congress Members
+Legislation Trackers,https://www.govtrack.us/developers/api,3rd Party,API
+Texas ESA,https://guides.sll.texas.gov/animal-law/service-animals,State,ESA
+Dallas Rent Control 2025 (DEMO),C:\Users\safaa\OneDrive\Desktop\Agent Intellectual Platform\test_rent_control_dallas_demo.html,Local,Rent Control

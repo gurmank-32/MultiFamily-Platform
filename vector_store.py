@@ -16,27 +16,7 @@ import hashlib
 
 class RegulationVectorStore:
     def __init__(self, db_path: str = VECTOR_DB_PATH, use_free_embeddings: bool = True):
-        """
-        Initialize ChromaDB client and collection.
-
-        Newer versions of Chroma use a tenant/database model and can raise:
-        ValueError: \"Could not connect to tenant default_tenant. Are you sure it exists?\"
-
-        To be compatible across versions and avoid tenant issues, prefer the
-        Settings-based client with a persistent DuckDB+Parquet backend. Fall
-        back to PersistentClient only if needed.
-        """
-        try:
-            # Preferred initialization for newer Chroma versions
-            self.client = chromadb.Client(Settings(
-                chroma_db_impl="duckdb+parquet",
-                persist_directory=db_path,
-                anonymized_telemetry=False,
-            ))
-        except Exception:
-            # Fallback for older versions that expect PersistentClient
-            self.client = chromadb.PersistentClient(path=db_path)
-
+        self.client = chromadb.PersistentClient(path=db_path)
         self.collection = self.client.get_or_create_collection(
             name="regulations",
             metadata={"hnsw:space": "cosine"}
@@ -48,18 +28,11 @@ class RegulationVectorStore:
         if use_free_embeddings:
             try:
                 from sentence_transformers import SentenceTransformer
-                # Using a lightweight, fast model that works well for legal text.
-                # Force CPU device to avoid PyTorch meta-tensor issues on some setups.
-                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
-                print("Using free embeddings (Sentence Transformers, CPU)")
+                # Using a lightweight, fast model that works well for legal text
+                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+                print("Using free embeddings (Sentence Transformers)")
             except ImportError:
                 print("Warning: sentence-transformers not installed. Install with: pip install sentence-transformers")
-                self.use_free_embeddings = False
-            except Exception as e:
-                # If anything goes wrong initializing the free model (e.g. PyTorch/meta tensor bugs),
-                # fall back to non-free embeddings so the app can still start.
-                print(f"Warning: could not initialize free embedding model: {e}")
-                self.embedding_model = None
                 self.use_free_embeddings = False
     
     def create_embedding(self, text: str) -> List[float]:
@@ -153,66 +126,50 @@ class RegulationVectorStore:
             prioritize_reliable: Whether to prioritize authoritative sources
             filter_geography: City name to filter by (e.g., "Dallas")
         """
-        try:
-            # Enhance query with legal terminology
-            enhanced_query = enhance_query_with_terminology(query, context)
-            
-            # Create query embedding from enhanced query
-            query_embedding = self.create_embedding(enhanced_query)
-            if not query_embedding:
-                return []
-            
-            # Get more results initially for reranking (2x requested)
-            initial_n = n_results * 2 if prioritize_reliable else n_results
-            
-            # Build where clause for filtering
-            where = {}
-            if category_filter:
-                where["category"] = category_filter
-            
-            # Search with enhanced query - handle ChromaDB corruption gracefully
-            try:
-                results = self.collection.query(
-                    query_embeddings=[query_embedding],
-                    n_results=initial_n,
-                    where=where if where else None
-                )
-            except Exception as db_error:
-                # If ChromaDB is corrupted, return empty results and log error
-                error_msg = str(db_error)
-                if "hnsw" in error_msg.lower() or "index" in error_msg.lower() or "corrupt" in error_msg.lower():
-                    print(f"Warning: ChromaDB index error detected. The database may need to be rebuilt. Error: {error_msg}")
-                    # Return empty results instead of crashing
-                    return []
-                else:
-                    # Re-raise other errors
-                    raise
-            
-            # Format results
-            formatted_results = []
-            if results['ids'] and len(results['ids'][0]) > 0:
-                for i in range(len(results['ids'][0])):
-                    formatted_results.append({
-                        "id": results['ids'][0][i],
-                        "document": results['documents'][0][i],
-                        "metadata": results['metadatas'][0][i],
-                        "distance": results['distances'][0][i] if 'distances' in results else 0.0
-                    })
-            
-            # Filter by geography if specified
-            if filter_geography:
-                formatted_results = filter_by_geography(formatted_results, filter_geography)
-            
-            # Rerank results if prioritizing reliable sources
-            if prioritize_reliable and formatted_results:
-                formatted_results = rerank_results(formatted_results, query, context)
-            
-            # Return top n_results
-            return formatted_results[:n_results]
-        except Exception as e:
-            # Catch any other errors and return empty results
-            print(f"Error in vector search: {str(e)}")
+        # Enhance query with legal terminology
+        enhanced_query = enhance_query_with_terminology(query, context)
+        
+        # Create query embedding from enhanced query
+        query_embedding = self.create_embedding(enhanced_query)
+        if not query_embedding:
             return []
+        
+        # Get more results initially for reranking (2x requested)
+        initial_n = n_results * 2 if prioritize_reliable else n_results
+        
+        # Build where clause for filtering
+        where = {}
+        if category_filter:
+            where["category"] = category_filter
+        
+        # Search with enhanced query
+        results = self.collection.query(
+            query_embeddings=[query_embedding],
+            n_results=initial_n,
+            where=where if where else None
+        )
+        
+        # Format results
+        formatted_results = []
+        if results['ids'] and len(results['ids'][0]) > 0:
+            for i in range(len(results['ids'][0])):
+                formatted_results.append({
+                    "id": results['ids'][0][i],
+                    "document": results['documents'][0][i],
+                    "metadata": results['metadatas'][0][i],
+                    "distance": results['distances'][0][i] if 'distances' in results else 0.0
+                })
+        
+        # Filter by geography if specified
+        if filter_geography:
+            formatted_results = filter_by_geography(formatted_results, filter_geography)
+        
+        # Rerank results if prioritizing reliable sources
+        if prioritize_reliable and formatted_results:
+            formatted_results = rerank_results(formatted_results, query, context)
+        
+        # Return top n_results
+        return formatted_results[:n_results]
     
     def delete_regulation(self, regulation_id: str):
         """Delete all chunks for a regulation"""

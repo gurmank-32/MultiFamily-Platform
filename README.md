@@ -34,11 +34,23 @@ SMTP_EMAIL=your_email@gmail.com
 SMTP_PASSWORD=your_app_password
 ```
 
-## Quick Deploy to Streamlit Cloud (FREE)
+## 🚀 Quick Deploy to Streamlit Cloud (FREE)
 
-**Want to deploy instantly?** See **[DEPLOY_QUICK_START.md](DEPLOY_QUICK_START.md)** for a 5-minute guide.
+**Ready to show your client?** Deploy in 5 minutes!
 
-Or follow the detailed guide: **[STREAMLIT_CLOUD_DEPLOYMENT.md](STREAMLIT_CLOUD_DEPLOYMENT.md)**
+### Quick Start (5 minutes)
+👉 **[DEPLOY_QUICK_START.md](DEPLOY_QUICK_START.md)** - Get deployed in 5 minutes
+
+### Detailed Guide
+👉 **[STREAMLIT_CLOUD_DEPLOYMENT.md](STREAMLIT_CLOUD_DEPLOYMENT.md)** - Complete step-by-step guide
+
+### Deployment Checklist
+👉 **[DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)** - Ensure everything is ready
+
+**What you need:**
+- GitHub account (free)
+- Streamlit Cloud account (free)
+- OpenAI API key (for LLM features)
 
 ## Usage
 

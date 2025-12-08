@@ -42,8 +42,8 @@ VECTOR_DB_PATH = "./chroma_db"
 # Email Configuration (SMTP)
 SMTP_SERVER = get_secret("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(get_secret("SMTP_PORT", "587"))
-SMTP_EMAIL = get_secret("SMTP_EMAIL", "")
-SMTP_PASSWORD = get_secret("SMTP_PASSWORD", "")
+SMTP_EMAIL = get_secret("SMTP_EMAIL", "intelligenceplatformupdate@gmail.com")
+SMTP_PASSWORD = get_secret("SMTP_PASSWORD", "uhkf cdbq qpxp uglm")
 
 # Supported Cities
 SUPPORTED_CITIES = ["Dallas", "Houston", "Austin", "San Antonio", "Texas-Statewide"]
@@ -73,5 +73,5 @@ LEGAL_DISCLAIMER = (
     "Always perform your own due diligence."
 )
 
-# Data Sources - REQUIRED: finalsource11.xlsx with columns: category, city, level, hyperlink
-SOURCES_FILE = "finalsource11.xlsx"
+# Data Sources
+SOURCES_FILE = "sources.csv"

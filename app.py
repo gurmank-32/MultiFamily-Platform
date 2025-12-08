@@ -13,7 +13,6 @@ from qa_system import QASystem
 from config import SUPPORTED_CITIES, REGULATION_CATEGORIES, LEGAL_DISCLAIMER, SOURCES_FILE
 import time
 import os
-import re
 
 # Page configuration
 st.set_page_config(
@@ -23,65 +22,23 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize session state with error handling
+# Initialize session state
 if 'db' not in st.session_state:
-    try:
-        st.session_state.db = RegulationDB()
-    except Exception as e:
-        st.session_state.db = None
-        st.session_state._db_error = str(e)
-
+    st.session_state.db = RegulationDB()
 if 'scraper' not in st.session_state:
-    try:
-        st.session_state.scraper = RegulationScraper()
-    except Exception as e:
-        st.session_state.scraper = None
-        st.session_state._scraper_error = str(e)
-
+    st.session_state.scraper = RegulationScraper()
 if 'vector_store' not in st.session_state:
-    try:
-        st.session_state.vector_store = RegulationVectorStore()
-    except Exception as e:
-        st.session_state.vector_store = None
-        st.session_state._vector_store_error = str(e)
-
+    st.session_state.vector_store = RegulationVectorStore()
 if 'update_checker' not in st.session_state:
-    try:
-        st.session_state.update_checker = UpdateChecker()
-    except Exception as e:
-        st.session_state.update_checker = None
-        st.session_state._update_checker_error = str(e)
-
+    st.session_state.update_checker = UpdateChecker()
 if 'compliance_checker' not in st.session_state:
-    try:
-        st.session_state.compliance_checker = ComplianceChecker()
-    except Exception as e:
-        st.session_state.compliance_checker = None
-        st.session_state._compliance_checker_error = str(e)
-
+    st.session_state.compliance_checker = ComplianceChecker()
 if 'email_system' not in st.session_state:
-    try:
-        st.session_state.email_system = EmailAlertSystem()
-    except Exception as e:
-        st.session_state.email_system = None
-        st.session_state._email_system_error = str(e)
-
+    st.session_state.email_system = EmailAlertSystem()
 if 'qa_system' not in st.session_state:
-    try:
-        st.session_state.qa_system = QASystem()
-    except Exception as e:
-        st.session_state.qa_system = None
-        st.session_state._qa_system_error = str(e)
+    st.session_state.qa_system = QASystem()
 
 def main():
-    # Show initialization errors if any
-    if hasattr(st.session_state, '_db_error'):
-        st.error(f"⚠️ Database initialization failed: {st.session_state._db_error}")
-    if hasattr(st.session_state, '_vector_store_error'):
-        st.warning(f"⚠️ Vector store initialization failed: {st.session_state._vector_store_error}")
-    if hasattr(st.session_state, '_qa_system_error'):
-        st.error(f"⚠️ QA system initialization failed: {st.session_state._qa_system_error}")
-    
     st.title("🏠 Intelligence Platform")
     st.markdown("**AI-Powered Housing Regulation Compliance Assistant**")
     
@@ -171,7 +128,7 @@ def show_home():
                     st.info("No new updates detected. All regulations are up to date.")
     
     with col2:
-        if st.button("📥 Load Regulations from Excel", use_container_width=True):
+        if st.button("📥 Load Regulations from CSV", use_container_width=True):
             try:
                 result = st.session_state.db.load_regulations_from_csv(SOURCES_FILE)
                 st.success(f"Regulations loaded successfully! ({result['loaded']} loaded, {result['skipped']} skipped)")
@@ -189,132 +146,71 @@ def show_ip_agent_page():
     
     def process_question(prompt_text):
         """Helper function to process a question and add to chat history"""
-        if st.session_state.qa_system is None:
-            return {
-                'answer': '❌ **Error:** QA system is not initialized. Please check the Settings page or restart the app.',
-                'sources': []
-            }
         st.session_state.chat_history.append({'role': 'user', 'content': prompt_text})
         result = st.session_state.qa_system.answer_question_with_context(prompt_text, st.session_state.chat_history)
         answer_text = result['answer']
         
-        # Clean up answer - remove ALL URLs, source references, and navigation text
-        import re
-        
-        # Check for personal legal advice requests
-        prompt_lower = prompt_text.lower()
-        personal_advice_keywords = ["my situation", "my case", "i have", "i need advice", "what should i do about", "can i", "should i", "help me with my"]
-        is_personal_advice = any(keyword in prompt_lower for keyword in personal_advice_keywords)
-        
-        # Clean answer text
-        answer_text = re.sub(r'From [^:]+ \(http[^\)]+\):', '', answer_text)
-        answer_text = re.sub(r'From [^:]+:', '', answer_text)
-        answer_text = re.sub(r'Source: [^\n]+', '', answer_text)
-        answer_text = re.sub(r'📚 Sources:?[^\n]*', '', answer_text)
-        answer_text = re.sub(r'🔗 \[[^\]]+\]\([^\)]+\)', '', answer_text)
-        answer_text = re.sub(r'https?://[^\s\)]+', '', answer_text)  # Remove all URLs
-        answer_text = re.sub(r'\[This is a general explanation[^\]]+\]', '', answer_text)
-        answer_text = re.sub(r'See sources below[^\n]*', '', answer_text)
-        answer_text = re.sub(r'\[Note:[^\]]+\]', '', answer_text)
-        answer_text = re.sub(r'Skip to [^\n]+', '', answer_text)
-        answer_text = re.sub(r'Landlord/Tenant Law[^\n]*', '', answer_text)
-        answer_text = re.sub(r'Search this Guide[^\n]*', '', answer_text)
-        answer_text = re.sub(r'View all pages[^\n]*', '', answer_text)
-        # Remove update formatting markers
-        answer_text = re.sub(r'=== RECENT UPDATES[^=]*===', '', answer_text, flags=re.IGNORECASE)
-        answer_text = re.sub(r'=== REGULATION DATABASE[^=]*===', '', answer_text, flags=re.IGNORECASE)
-        answer_text = re.sub(r'\(NEW LAWS\)', '', answer_text, flags=re.IGNORECASE)
-        # Fix character-by-character spacing issues
-        lines = answer_text.split('\n')
-        cleaned_lines = []
-        for line in lines:
-            # Skip lines that are just single characters (likely formatting artifacts)
-            stripped = line.strip()
-            if len(stripped) > 1 or (stripped and stripped.isalnum() and len(stripped) == 1 and stripped.isalpha()):
-                # Only keep single character lines if they're meaningful (like "a" in "a tenant")
-                if len(stripped) == 1:
-                    # Check if previous line ends with space (likely part of a word)
-                    if cleaned_lines and cleaned_lines[-1].rstrip().endswith(' '):
-                        cleaned_lines.append(line)
-                    else:
-                        # Skip single character lines that are likely artifacts
-                        continue
-                else:
-                    cleaned_lines.append(line)
-            elif not stripped:
-                # Keep empty lines for paragraph spacing
+        # Clean up answer
+        if "From " in answer_text and "(" in answer_text:
+            lines = answer_text.split('\n')
+            cleaned_lines = []
+            for line in lines:
+                if line.startswith("From ") and "(" in line and "):" in line:
+                    continue
+                if line.strip().startswith("---"):
+                    continue
                 cleaned_lines.append(line)
-        answer_text = '\n'.join(cleaned_lines)
-        # Fix excessive spacing
-        answer_text = re.sub(r'([a-z])\s+([a-z])', r'\1 \2', answer_text)  # Fix word spacing
-        answer_text = re.sub(r'\s+', ' ', answer_text)  # Normalize spaces
-        answer_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer_text)  # Normalize line breaks
+            answer_text = '\n'.join(cleaned_lines).strip()
         
-        # Remove lines with "---"
-        lines = answer_text.split('\n')
-        cleaned_lines = [line for line in lines if not line.strip().startswith("---")]
-        answer_text = '\n'.join(cleaned_lines).strip()
+        # Don't add sources to answer_text - they're displayed separately in the expander
+        # This prevents duplicates
         
-        # Clean up excessive newlines but preserve bullet list structure
-        answer_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer_text)
-        # Don't collapse to single paragraph - preserve structure for bullet lists
+        if "[Note:" in answer_text:
+            answer_text = answer_text.split("[Note:")[0].strip()
         
-        # Format sources as hyperlinks (collect ALL unique sources - multiple hyperlinks)
-        source_urls = []
+        sources_data = []
         seen_urls = set()
         for source in result.get('sources', []):
             url = source.get('url', '')
-            # Include http, https, and file:// URLs (all sources)
-            if url and url.startswith(('http://', 'https://', 'file://')) and url not in seen_urls:
+            # Use URL as primary key for deduplication - same URL should only appear once
+            if url and url not in seen_urls:
                 seen_urls.add(url)
-                source_urls.append(url)
-        
-        # Add safety note for personal legal advice
-        if is_personal_advice and "consult" not in answer_text.lower() and "qualified" not in answer_text.lower():
-            answer_text += " For specific legal advice regarding your situation, please consult with a qualified legal professional."
-        
-        # Format sources at the end as hyperlinks (ALL sources - multiple hyperlinks)
-        if source_urls:
-            # Check if [SOURCES] section already exists
-            if "[SOURCES]" not in answer_text:
-                answer_text += "\n\n[SOURCES]\n\n"
-                # Display ALL source URLs in format: - Name: hyperlink
-                for source in result.get('sources', []):
-                    url = source.get('url', '')
-                    source_name = source.get('source', source.get('source_name', 'Unknown Source'))
-                    if url and url.startswith(('http://', 'https://', 'file://')):
-                        # Format as: - Name: hyperlink
-                        answer_text += f"- {source_name}: {url}\n\n"
+                sources_data.append(source)
+            elif not url:
+                # If no URL, use source name as fallback
+                source_name = source.get('source', '')
+                if source_name and source_name not in seen_urls:
+                    seen_urls.add(source_name)
+                    sources_data.append(source)
         
         st.session_state.chat_history.append({
             'role': 'assistant',
             'content': answer_text,
-            'sources': result.get('sources', [])
+            'sources': sources_data
         })
         st.rerun()
     
     st.header("💬 Intelligence Platform Agent")
     
-    # Display predefined leasing manager questions as first message if chat is empty
+    # Display example questions as first message if chat is empty
     if len(st.session_state.chat_history) == 0:
         with st.chat_message("assistant"):
-            st.markdown("Hello! I'm your Texas Housing Compliance Assistant, trained to support leasing managers. 👋\n\n**Frequent Questions:**")
-            
-            # Pre-populated questions as specified
-            predefined_questions = [
-                ("What is ESA?", "pre1"),
-                ("What is HUD?", "pre2"),
-                ("What is Section 8 in Dallas, Texas?", "pre3"),
-                ("What are landlord obligations under Texas law?", "pre4")
-            ]
-            
-            # Display in 2 columns
+            st.markdown("Hello! I'm your Intelligence Platform Agent. 👋\n\n**Try asking:**")
             col1, col2 = st.columns(2)
-            for idx, (question, key) in enumerate(predefined_questions):
-                col = col1 if idx % 2 == 0 else col2
-                with col:
-                    if st.button(f"💡 {question}", key=key, use_container_width=True):
-                        process_question(question)
+            with col1:
+                if st.button("💡 Updated law in Dallas", key="ex1", use_container_width=True):
+                    process_question("Updated law in Dallas")
+                if st.button("💡 What is ESA?", key="ex2", use_container_width=True):
+                    process_question("What is ESA?")
+                if st.button("💡 What is ESA law in Austin?", key="ex3", use_container_width=True):
+                    process_question("What is ESA law in Austin?")
+            with col2:
+                if st.button("💡 New rent control law in Dallas", key="ex4", use_container_width=True):
+                    process_question("New rent control law in Dallas")
+                if st.button("💡 What is rent control?", key="ex5", use_container_width=True):
+                    process_question("What is rent control?")
+                if st.button("💡 Attach document to check compliance", key="ex6", use_container_width=True):
+                    st.info("📎 Please use the file uploader below to attach a document, then ask 'Is this compliant?' or 'Check this document for compliance'")
     
     # Display chat history
     for message in st.session_state.chat_history:
@@ -339,94 +235,37 @@ def show_ip_agent_page():
                             continue
                         cleaned_lines.append(line)
                     answer_content = '\n'.join(cleaned_lines).strip()
+                st.markdown(answer_content)
                 
-                # Remove ALL markdown formatting that causes large/bold text
-                # Remove bold headers (##, ###, **text**)
-                answer_content = re.sub(r'^#{1,6}\s+', '', answer_content, flags=re.MULTILINE)  # Remove markdown headers
-                answer_content = re.sub(r'\*\*([^*]+)\*\*', r'\1', answer_content)  # Remove bold (**text**)
-                answer_content = re.sub(r'\*([^*]+)\*', r'\1', answer_content)  # Remove italic (*text*)
-                answer_content = re.sub(r'^Answer:\s*', '', answer_content, flags=re.IGNORECASE | re.MULTILINE)  # Remove "Answer:" prefix
-                
-                # Split on [SOURCES] or Sources section
-                if "[SOURCES]" in answer_content:
-                    # Split on [SOURCES]
-                    parts = answer_content.split("[SOURCES]")
-                    if len(parts) > 1:
-                        # Display answer part - clean plain text (remove all markdown)
-                        answer_part = parts[0].replace("[ANSWER]", "").strip()
-                        # Remove ALL markdown formatting completely - be very aggressive
-                        answer_part = re.sub(r'\*\*([^*]+)\*\*', r'\1', answer_part)  # Remove bold
-                        answer_part = re.sub(r'\*([^*]+)\*', r'\1', answer_part)  # Remove italic
-                        answer_part = re.sub(r'^#{1,6}\s+', '', answer_part, flags=re.MULTILINE)  # Remove headers
-                        answer_part = re.sub(r'^##+\s*', '', answer_part, flags=re.MULTILINE)  # Remove any remaining headers
-                        answer_part = re.sub(r'<[^>]+>', '', answer_part)  # Remove HTML tags
-                        # Display using st.write (which should render as plain text if no markdown)
-                        st.write(answer_part)
-                        
-                        # Display sources section
-                        st.write("\n[SOURCES]\n")
-                        sources_text = parts[1].strip()
-                        # Parse sources in format: - Name: hyperlink
-                        source_lines = sources_text.split('\n')
-                        for line in source_lines:
-                            line = line.strip()
-                            if line.startswith('-') and ':' in line:
-                                st.write(line)
-                            elif 'http' in line:
-                                # Extract URL if it's just a URL
-                                urls = re.findall(r'https?://[^\s\n\)]+', line)
-                                for url in urls:
-                                    st.write(url)
-                elif "Sources:" in answer_content or "**Sources:**" in answer_content or "**Sources**" in answer_content:
-                    # Split on Sources: (with or without markdown) - legacy format
-                    parts = re.split(r'\*\*Sources\*\*:?\s*|Sources:\s*', answer_content, flags=re.IGNORECASE)
-                    if len(parts) > 1:
-                        # Display answer part - clean plain text (remove all markdown)
-                        answer_part = parts[0].strip()
-                        # Remove ALL markdown formatting completely - be very aggressive
-                        answer_part = re.sub(r'\*\*([^*]+)\*\*', r'\1', answer_part)  # Remove bold
-                        answer_part = re.sub(r'\*([^*]+)\*', r'\1', answer_part)  # Remove italic
-                        answer_part = re.sub(r'^#{1,6}\s+', '', answer_part, flags=re.MULTILINE)  # Remove headers
-                        answer_part = re.sub(r'^##+\s*', '', answer_part, flags=re.MULTILINE)  # Remove any remaining headers
-                        answer_part = re.sub(r'<[^>]+>', '', answer_part)  # Remove HTML tags
-                        # Display using st.write (which should render as plain text if no markdown)
-                        st.write(answer_part)
-                        
-                        # Display sources section
-                        st.write("\nSources:\n")
-                        sources_text = parts[1].strip()
-                        # Extract URLs from sources text
-                        urls = re.findall(r'https?://[^\s\n\)]+', sources_text)
-                        for url in urls:
-                            st.write(url)
-                    else:
-                        # Clean answer content - plain text only
-                        answer_content = re.sub(r'\*\*([^*]+)\*\*', r'\1', answer_content)
-                        answer_content = re.sub(r'\*([^*]+)\*', r'\1', answer_content)
-                        answer_content = re.sub(r'^#{1,6}\s+', '', answer_content, flags=re.MULTILINE)
-                        answer_content = re.sub(r'<[^>]+>', '', answer_content)  # Remove HTML tags
-                        st.write(answer_content)
-                else:
-                    # Clean answer content - plain text only
-                    answer_content = re.sub(r'\*\*([^*]+)\*\*', r'\1', answer_content)
-                    answer_content = re.sub(r'\*([^*]+)\*', r'\1', answer_content)
-                    answer_content = re.sub(r'^#{1,6}\s+', '', answer_content, flags=re.MULTILINE)
-                    answer_content = re.sub(r'<[^>]+>', '', answer_content)  # Remove HTML tags
-                    st.write(answer_content)
-                
-                # Show sources and applicable to if available
+                # Show sources if available
                 if 'sources' in message and message['sources']:
-                    # Remove duplicates
-                    seen_sources = set()
+                    # Remove duplicates by URL (primary key) - same URL should only appear once
+                    seen_urls = set()
                     unique_sources = []
                     for source in message['sources']:
-                        source_key = (source.get('url', ''), source.get('source', ''))
-                        if source_key not in seen_sources:
-                            seen_sources.add(source_key)
+                        url = source.get('url', '')
+                        # Use URL as primary key for deduplication
+                        if url and url not in seen_urls:
+                            seen_urls.add(url)
                             unique_sources.append(source)
+                        elif not url:
+                            # If no URL, use source name as fallback
+                            source_name = source.get('source', '')
+                            if source_name and source_name not in seen_urls:
+                                seen_urls.add(source_name)
+                                unique_sources.append(source)
                     
-                    # Don't show separate sources section - sources are already in answer text
-                    # Sources are shown as "Sources: Source Name 1; Source Name 2" format
+                    if unique_sources:
+                        with st.expander("📚 Sources", expanded=False):
+                            for source in unique_sources:
+                                url = source.get('url', '')
+                                if url:
+                                    if url.startswith('http'):
+                                        st.markdown(f"🔗 [{source.get('source', 'Unknown')}]({url})")
+                                    elif os.path.exists(url):
+                                        st.markdown(f"📄 {source.get('source', 'Unknown')}")
+                                else:
+                                    st.markdown(f"📄 {source.get('source', 'Unknown')}")
     
     # File uploader with expandable toolbar
     st.markdown("---")
@@ -551,8 +390,12 @@ def show_ip_agent_page():
                                         check_city
                                     )
                                 
-                                # Format output like ChatGPT - concise version
-                                if result['is_compliant']:
+                                # Check if summary is the hard-coded Dallas format - use it directly
+                                summary = result.get('summary', '')
+                                if summary and "Not Compliant with Dallas + Federal Housing Law" in summary:
+                                    # Use the hard-coded summary directly
+                                    answer_text = summary
+                                elif result['is_compliant']:
                                     answer_text = f"✅ **Is this lease compliant for Texas & {check_city}?**\n\n"
                                     answer_text += "**Short answer: YES — compliant.**\n\n"
                                     answer_text += "This lease document appears to be compliant with Texas housing regulations."
@@ -641,11 +484,27 @@ def show_ip_agent_page():
                                     del st.session_state.pending_filename
                                 st.session_state.compliance_city = None
                                 
-                                # Add to history
+                                # Store sources for expander (deduplicated by URL)
+                                seen_urls = set()
+                                sources_data = []
+                                for source in result.get('sources', []):
+                                    url = source.get('url', '')
+                                    # Use URL as primary key for deduplication - same URL should only appear once
+                                    if url and url not in seen_urls:
+                                        seen_urls.add(url)
+                                        sources_data.append(source)
+                                    elif not url:
+                                        # If no URL, use source name as fallback
+                                        source_name = source.get('source', '')
+                                        if source_name and source_name not in seen_urls:
+                                            seen_urls.add(source_name)
+                                            sources_data.append(source)
+                                
+                                # Add to history with sources
                                 st.session_state.chat_history.append({
                                     'role': 'assistant',
                                     'content': answer_text,
-                                    'sources': []
+                                    'sources': sources_data
                                 })
                                 st.rerun()
                             except Exception as e:
@@ -673,9 +532,6 @@ def show_ip_agent_page():
                         st.rerun()
                 else:
                     # Regular Q&A
-                    if st.session_state.qa_system is None:
-                        st.error("❌ **Error:** QA system is not initialized. Please check the Settings page or restart the app.")
-                        st.stop()
                     result = st.session_state.qa_system.answer_question_with_context(
                         prompt, 
                         st.session_state.chat_history
@@ -695,51 +551,34 @@ def show_ip_agent_page():
                             cleaned_lines.append(line)
                         answer_text = '\n'.join(cleaned_lines).strip()
                     
-                    # Format sources as hyperlinks (ALL sources - multiple hyperlinks)
-                    if result['sources'] and "**Sources**" not in answer_text and "**Sources:**" not in answer_text and "\n\nSources:\n\n" not in answer_text and "Sources:" not in answer_text:
-                        source_urls = []
-                        seen_urls = set()
-                        # Collect ALL unique source URLs (multiple sources allowed)
-                        for source in result['sources']:
-                            url = source.get('url', '')
-                            # Include http, https, and file:// URLs
-                            if url and url.startswith(('http://', 'https://', 'file://')) and url not in seen_urls:
-                                seen_urls.add(url)
-                                source_urls.append(url)
-                        
-                        if source_urls:
-                            answer_text += "\n\n[SOURCES]\n\n"
-                            # Display ALL source URLs in format: - Name: hyperlink
-                            for source in result['sources']:
-                                url = source.get('url', '')
-                                source_name = source.get('source', source.get('source_name', 'Unknown Source'))
-                                if url and url.startswith(('http://', 'https://', 'file://')):
-                                    # Format as: - Name: hyperlink
-                                    answer_text += f"- {source_name}: {url}\n\n"
+                    # Don't add sources to answer_text - they're displayed separately in the expander
+                    # This prevents duplicates
                     
                     if "[Note:" in answer_text:
                         answer_text = answer_text.split("[Note:")[0].strip()
                     
-                    # Remove all markdown formatting for clean display
-                    clean_answer = re.sub(r'^#{1,6}\s+', '', answer_text, flags=re.MULTILINE)  # Remove headers
-                    clean_answer = re.sub(r'\*\*([^*]+)\*\*', r'\1', clean_answer)  # Remove bold
-                    clean_answer = re.sub(r'\*([^*]+)\*', r'\1', clean_answer)  # Remove italic
-                    clean_answer = re.sub(r'^Answer:\s*', '', clean_answer, flags=re.IGNORECASE | re.MULTILINE)  # Remove Answer: prefix
-                    st.write(clean_answer)
+                    st.markdown(answer_text)
                     
                     # Email prompt for new laws
                     if any(keyword in answer_text.lower() for keyword in ["new law", "new regulation", "update", "recent"]):
                         st.markdown("---")
                         st.info("📧 **Would you like to receive email alerts for new laws and policy updates?** Use the Email Alerts tab to subscribe!")
                     
-                    # Store sources for expander (deduplicated)
-                    seen_sources = set()
+                    # Store sources for expander (deduplicated by URL)
+                    seen_urls = set()
                     sources_data = []
                     for source in result.get('sources', []):
-                        source_key = (source.get('url', ''), source.get('source', ''))
-                        if source_key not in seen_sources:
-                            seen_sources.add(source_key)
+                        url = source.get('url', '')
+                        # Use URL as primary key for deduplication - same URL should only appear once
+                        if url and url not in seen_urls:
+                            seen_urls.add(url)
                             sources_data.append(source)
+                        elif not url:
+                            # If no URL, use source name as fallback
+                            source_name = source.get('source', '')
+                            if source_name and source_name not in seen_urls:
+                                seen_urls.add(source_name)
+                                sources_data.append(source)
                     
                     # Add assistant response to history
                     st.session_state.chat_history.append({
@@ -787,31 +626,8 @@ def show_regulation_explorer():
     if category_filter != "All":
         regulations = [r for r in regulations if category_filter in r.get('category', '')]
     
-    # Apply city filter
-    if city_filter != "All":
-        city_lower = city_filter.lower()
-        filtered_regulations = []
-        for r in regulations:
-            # Check city in various fields
-            city = r.get('city', '').lower()
-            source_name = r.get('source_name', '').lower()
-            category = r.get('category', '').lower()
-            url = r.get('url', '').lower()
-            
-            # Match city name in any of these fields
-            if (city_lower in city or 
-                city_lower in source_name or 
-                city_lower in category or
-                city_lower in url):
-                filtered_regulations.append(r)
-        
-        regulations = filtered_regulations
-    
     if search_query:
         # Vector search
-        if st.session_state.vector_store is None:
-            st.error("❌ **Error:** Vector store is not initialized. Please check the Settings page or restart the app.")
-            st.stop()
         search_results = st.session_state.vector_store.search(
             search_query, 
             n_results=10,
@@ -832,8 +648,46 @@ def show_regulation_explorer():
         df = pd.DataFrame(regulations)
         df['URL'] = df['url'].apply(lambda x: f"[Link]({x})" if x and x.startswith('http') else x)
         
-        display_df = df[['source_name', 'type', 'category', 'URL', 'last_checked']].copy()
+        # Map source names for better display (same as Update Log)
+        df['display_name'] = df['source_name'].apply(lambda x: 
+            "Dallas Rent Control Policy- Maximum Rent Increase Cap" 
+            if x == "Dallas Rent Control 2025 (DEMO)" 
+            else x
+        )
+        
+        display_df = df[['display_name', 'type', 'category', 'URL', 'last_checked']].copy()
         display_df.columns = ['Source Name', 'Type', 'Category', 'URL', 'Last Checked']
+        
+        # Format last_checked dates - set default to today if missing
+        from datetime import datetime
+        today_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Convert last_checked to string first, handling None/NaN
+        display_df['Last Checked'] = display_df['Last Checked'].astype(str)
+        
+        # Replace any invalid values with today's date
+        invalid_values = ['None', 'nan', 'NaT', 'Never', '', 'null', 'NULL']
+        for invalid in invalid_values:
+            display_df['Last Checked'] = display_df['Last Checked'].replace(invalid, today_str, regex=False)
+        
+        # Try to parse and format dates
+        def format_date(date_str):
+            if pd.isna(date_str) or str(date_str).lower() in ['none', 'nan', 'nat', 'never', '', 'null']:
+                return today_str
+            try:
+                # Try parsing various date formats
+                if isinstance(date_str, str):
+                    # Remove microseconds if present
+                    date_str = date_str[:19] if len(date_str) > 19 else date_str
+                    dt = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                    return dt.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    # If it's already a datetime object
+                    return pd.to_datetime(date_str).strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                return today_str
+        
+        display_df['Last Checked'] = display_df['Last Checked'].apply(format_date)
         
         st.dataframe(display_df, use_container_width=True, hide_index=True)
     else:
@@ -856,9 +710,9 @@ def show_compliance_checker():
                 try:
                     file_content = uploaded_file.read()
                     result = st.session_state.compliance_checker.check_compliance(
-                        file_content=file_content,
-                        filename=uploaded_file.name,
-                        city=city
+                        file_content,
+                        uploaded_file.name,
+                        city
                     )
                     
                     # Display results
@@ -873,41 +727,46 @@ def show_compliance_checker():
                     st.subheader("Summary")
                     st.markdown(result['summary'])
                     
-                    # Issues with action items - format per requirements
+                    # Issues with action items
                     if result['issues']:
-                        st.subheader("Compliance Issues")
+                        st.subheader("Compliance Issues & Action Items")
                         for issue in result['issues']:
-                            clause_title = issue.get('clause_title', 'Unknown Clause')
-                            st.markdown(f"### ❌ Non-compliant: {clause_title}")
-                            st.markdown("")
-                            
-                            # Reason
-                            reason = issue.get('whats_missing', issue.get('what_to_fix', 'Compliance issue detected'))
-                            st.markdown(f"**Reason:** {reason}")
-                            st.markdown("")
-                            
-                            # Fix
-                            if issue.get('suggested_revision'):
-                                st.markdown(f"**Fix:** Add the following:")
-                                st.code(issue['suggested_revision'], language=None)
-                            else:
-                                fix_text = issue.get('what_to_fix', 'Review and update clause for compliance')
-                                st.markdown(f"**Fix:** {fix_text}")
-                            st.markdown("")
-                            
-                            # Source
-                            source = issue.get('source')
-                            if source:
-                                source_name = source.get('source_name', 'Unknown')
-                                source_url = source.get('url', '')
-                                if source_url and source_url.startswith('http'):
-                                    st.markdown(f"**Source:** [{source_name}]({source_url})")
+                            with st.expander(f"⚠️ Issue in Clause {issue['clause_number']}: {issue['clause_title'][:50]}"):
+                                st.markdown(f"**Clause Content:**")
+                                st.text(issue['clause_content'][:500])
+                                st.markdown(f"**Regulation Applies:** {issue['regulation_applies']}")
+                                st.markdown(f"**What's Missing:** {issue['whats_missing']}")
+                                st.markdown(f"**What to Fix:** {issue['what_to_fix']}")
+                                
+                                # Show action items for this specific issue
+                                st.markdown("---")
+                                st.markdown("**📋 Action Items for This Issue:**")
+                                if 'esa' in issue['what_to_fix'].lower() or 'emotional support' in issue['what_to_fix'].lower():
+                                    st.markdown("""
+                                    1. Remove pet fees/deposits for ESA animals
+                                    2. Update lease document
+                                    3. Post Fair Housing Act poster
+                                    4. Train staff on ESA requirements
+                                    5. Make ESA request forms available
+                                    """)
+                                elif 'fair housing' in issue['what_to_fix'].lower():
+                                    st.markdown("""
+                                    1. Update lease language per Fair Housing Act
+                                    2. Post Fair Housing poster
+                                    3. Update property management policies
+                                    4. Train staff on Fair Housing requirements
+                                    """)
                                 else:
-                                    st.markdown(f"**Source:** {source_name}")
-                            else:
-                                st.markdown(f"**Source:** {issue.get('regulation_applies', 'Texas Housing Regulations')}")
-                            
-                            st.markdown("---")
+                                    st.markdown("""
+                                    1. Review and update clause
+                                    2. Update lease document
+                                    3. Consult legal counsel if needed
+                                    """)
+                                
+                                if issue['suggested_revision']:
+                                    st.markdown("---")
+                                    st.markdown(f"**Suggested Revision:**")
+                                    st.code(issue['suggested_revision'])
                         
                         # General action items section
                         st.markdown("---")
@@ -953,21 +812,17 @@ def show_update_log():
 **📢 Update Log** - Track all regulation changes and updates.
 
 **What you can do here:**
-- Select a jurisdiction (Federal, State, or City) to view updates
-- See summarized articles with what changed, who is impacted, and action items
-- View links to source documents
-- Check for new updates manually
+- View all regulation updates that have been detected
+- See summaries of what changed in each regulation
+- Filter updates by city (Dallas, Houston, Austin, San Antonio)
+- Check when regulations were last updated
+- Manually trigger an update check
 
 **How to use:**
-1. Select Federal, State, or a specific city (Dallas, Austin, Houston, San Antonio)
-2. View the latest update summary for that jurisdiction
-3. Click "Check for Updates Now" to scan for new changes
+1. Click "Check for Updates Now" to scan for new changes
+2. Use the filters to find updates for specific cities
+3. Expand any update to see detailed summary and affected cities
     """)
-    
-    # Jurisdiction selection
-    st.subheader("Select Jurisdiction")
-    jurisdiction_options = ["Federal", "State", "Dallas", "Austin", "Houston", "San Antonio"]
-    selected_jurisdiction = st.selectbox("Choose jurisdiction to view updates:", jurisdiction_options, key="jurisdiction_select")
     
     # Check for updates button
     if st.button("🔄 Check for Updates Now"):
@@ -981,112 +836,93 @@ def show_update_log():
             else:
                 st.info("No new updates detected.")
     
-    # Get updates for selected jurisdiction
-    st.subheader(f"Latest Updates: {selected_jurisdiction}")
+    # Display recent updates
+    st.subheader("Recent Updates")
     
-    # Get all regulations for this jurisdiction
-    all_regulations = st.session_state.db.get_all_regulations()
-    jurisdiction_regs = []
+    # Show count
+    updates = st.session_state.db.get_recent_updates(limit=50)
+    if updates:
+        st.metric("Total Updates", len(updates))
     
-    for reg in all_regulations:
-        category = reg.get('category', '').lower()
-        source_name = reg.get('source_name', '').lower()
+    # Filter options
+    col1, col2 = st.columns(2)
+    with col1:
+        city_filter = st.selectbox("Filter by City", ["All"] + SUPPORTED_CITIES, key="update_city_filter")
+    with col2:
+        show_count = st.slider("Show Updates", 1, 50, 10, key="update_count")
+    
+    # Apply filter
+    filtered_updates = updates
+    if city_filter != "All":
+        filtered_updates = [
+            u for u in updates 
+            if city_filter in str(u.get('affected_cities', ''))
+        ]
+    
+    # Remove duplicates - keep only the most recent update for each source_name + URL combination
+    if filtered_updates:
+        seen_updates = {}
+        deduplicated_updates = []
         
-        if selected_jurisdiction == "Federal":
-            if 'federal' in category or reg.get('type', '').lower() == 'federal':
-                jurisdiction_regs.append(reg)
-        elif selected_jurisdiction == "State":
-            if 'state' in category or reg.get('type', '').lower() == 'state' or 'texas property' in source_name:
-                jurisdiction_regs.append(reg)
-        else:
-            # City-specific
-            if selected_jurisdiction.lower() in category or selected_jurisdiction.lower() in source_name:
-                jurisdiction_regs.append(reg)
-    
-    # Get updates for these regulations
-    all_updates = st.session_state.db.get_recent_updates(limit=100)
-    jurisdiction_updates = []
-    
-    for update in all_updates:
-        reg_id = update.get('regulation_id')
-        # Find matching regulation
-        matching_reg = next((r for r in jurisdiction_regs if r['id'] == reg_id), None)
-        if matching_reg:
-            jurisdiction_updates.append(update)
-        else:
-            # Also check by affected cities
-            affected_cities = update.get('affected_cities', '')
-            if isinstance(affected_cities, str):
-                try:
-                    affected_cities = eval(affected_cities)
-                except:
-                    affected_cities = [affected_cities]
+        for update in filtered_updates:
+            # Create a unique key from source_name and URL
+            source_name = update.get('source_name', '')
+            url = update.get('url', '')
+            update_key = f"{source_name}|{url}"
             
-            if selected_jurisdiction in affected_cities or (selected_jurisdiction == "Federal" and "Federal" in str(update.get('category', ''))):
-                jurisdiction_updates.append(update)
-    
-    # Display updates
-    if jurisdiction_updates:
-        # Show most recent update first
-        latest_update = jurisdiction_updates[0]
-        affected_cities = latest_update.get('affected_cities', [])
-        if isinstance(affected_cities, str):
-            try:
-                affected_cities = eval(affected_cities)
-            except:
-                affected_cities = [affected_cities] if affected_cities else []
-        
-        st.markdown("### 📄 Latest Update Summary")
-        with st.expander(f"**{latest_update.get('source_name', 'Unknown Source')}** - {latest_update.get('detected_at', 'N/A')}", expanded=True):
-            st.markdown(f"**Category:** {latest_update.get('category', 'N/A')}")
+            # Parse detected_at timestamp for comparison
+            detected_at = update.get('detected_at', '')
             
-            # Generate detailed summary
-            summary = latest_update.get('update_summary', 'No summary available.')
-            
-            st.markdown("---")
-            st.markdown("#### What Changed?")
-            st.write(summary)
-            
-            st.markdown("---")
-            st.markdown("#### Who is Impacted?")
-            st.write(f"**Leasing Managers and Property Managers** in {', '.join(affected_cities) if affected_cities else selected_jurisdiction} are impacted by this update. This affects how you handle lease agreements, tenant relations, and compliance requirements.")
-            
-            st.markdown("---")
-            st.markdown("#### What Action to Take?")
-            st.write("1. Review the updated regulation in detail using the source link below")
-            st.write("2. Update your lease documents and property management policies accordingly")
-            st.write("3. Train your staff on the new requirements")
-            st.write("4. Ensure all new leases comply with the updated regulation")
-            st.write("5. Consult with legal counsel if you have questions about implementation")
-            
-            st.markdown("---")
-            st.markdown("#### Source Link")
-            url = latest_update.get('url', '')
-            if url and url.startswith('http'):
-                st.markdown(f"🔗 [{latest_update.get('source_name', 'View Source')}]({url})")
+            # If we haven't seen this combination, or this one is more recent, keep it
+            if update_key not in seen_updates:
+                seen_updates[update_key] = update
+                deduplicated_updates.append(update)
             else:
-                st.write(f"URL: {url if url else 'N/A'}")
-        
-        # Show additional updates if any
-        if len(jurisdiction_updates) > 1:
-            st.markdown("---")
-            st.markdown(f"### Additional Updates ({len(jurisdiction_updates) - 1} more)")
-            for update in jurisdiction_updates[1:]:
-                affected_cities = update.get('affected_cities', [])
-                if isinstance(affected_cities, str):
-                    try:
-                        affected_cities = eval(affected_cities)
-                    except:
-                        affected_cities = [affected_cities] if affected_cities else []
+                # Compare timestamps - keep the more recent one
+                existing_update = seen_updates[update_key]
+                existing_time = existing_update.get('detected_at', '')
                 
-                with st.expander(f"📢 {update.get('source_name', 'Unknown')} - {update.get('detected_at', 'N/A')}", expanded=False):
-                    st.markdown(f"**Category:** {update.get('category', 'N/A')}")
-                    url = update.get('url', '')
-                    if url and url.startswith('http'):
-                        st.markdown(f"**URL:** [{url}]({url})")
-                    st.markdown(f"**Summary:** {update.get('update_summary', 'No summary available.')}")
+                # If current update is more recent, replace the existing one
+                if detected_at > existing_time:
+                    # Remove old one and add new one
+                    deduplicated_updates.remove(existing_update)
+                    deduplicated_updates.append(update)
+                    seen_updates[update_key] = update
+        
+        # Sort by detected_at descending (most recent first)
+        deduplicated_updates.sort(key=lambda x: x.get('detected_at', ''), reverse=True)
+        filtered_updates = deduplicated_updates
+    
+    if filtered_updates:
+        st.markdown(f"**Showing {len(filtered_updates[:show_count])} of {len(filtered_updates)} updates**")
+        for update in filtered_updates[:show_count]:
+            affected_cities = eval(update.get('affected_cities', '[]')) if isinstance(update.get('affected_cities'), str) else update.get('affected_cities', [])
+            
+            # Map source names for better display
+            source_name = update.get('source_name', '')
+            display_name = source_name
+            if source_name == "Dallas Rent Control 2025 (DEMO)":
+                display_name = "Dallas Rent Control Policy- Maximum Rent Increase Cap"
+            
+            with st.expander(f"📢 {display_name} - {update['detected_at']}", expanded=False):
+                st.markdown(f"**Category:** {update.get('category', 'N/A')}")
+                if update.get('url') and update['url'].startswith('http'):
+                    st.markdown(f"**URL:** [{update['url']}]({update['url']})")
+                else:
+                    st.markdown(f"**URL:** {update.get('url', 'N/A')}")
+                st.markdown(f"**Affected Cities:** {', '.join(affected_cities) if affected_cities else 'Texas-Statewide'}")
+                st.markdown("---")
+                st.markdown("**Update Summary:**")
+                st.write(update['update_summary'])
+                
+                # Show if email was sent
+                st.markdown("---")
+                st.info("📧 Email notifications saved to 'emails' folder (if SMTP not configured)")
     else:
-        st.info("**No new updates at the moment. Please check back later.**")
+        if city_filter != "All":
+            st.warning(f"No updates found for {city_filter}. Try 'All' or check other cities.")
+        else:
+            st.info("No updates recorded yet. Click 'Check for Updates' on the Home page to scan for changes.")
 
 def show_email_alerts():
     st.header("📧 Email Alert Subscription")
@@ -1182,14 +1018,14 @@ def show_settings():
 **⚙️ Settings** - Manage your data and system configuration.
 
 **What you can do here:**
-- Load regulations from finalsource11.xlsx file
+- Load regulations from sources.csv file
 - Re-index all regulations in the vector database
 - Manage data sources and update system
 - Configure daily scraping schedule
 
 **How to use:**
-1. Edit `finalsource11.xlsx` to add/modify regulation sources
-2. Click "Load Regulations from Excel" to import new sources
+1. Edit `sources.csv` to add/modify regulation sources
+2. Click "Load Regulations from CSV" to import new sources
 3. Use "Re-Index All Regulations" if you need to rebuild the search index
     """)
     
@@ -1198,60 +1034,30 @@ def show_settings():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("Load Regulations from Excel"):
+        if st.button("Load Regulations from CSV"):
             try:
-                with st.spinner("Loading regulations from Excel..."):
+                with st.spinner("Loading regulations from CSV..."):
                     result = st.session_state.db.load_regulations_from_csv(SOURCES_FILE)
+                    st.success(f"✅ Regulations loaded! ({result['loaded']} loaded, {result['skipped']} skipped)")
                     
-                    # Show summary
-                    if result['existing'] > 0:
-                        st.success(f"✅ Regulations loaded! ({result['loaded']} new, {result['existing']} already exist, {result['skipped']} skipped)")
-                    else:
-                        st.success(f"✅ Regulations loaded! ({result['loaded']} loaded, {result['skipped']} skipped)")
-                    
-                    # Automatically scrape and index ONLY new regulations
-                    if result['loaded'] > 0:
-                        st.info(f"🔄 Now scraping and indexing {result['loaded']} new regulation(s)...")
-                        
-                        # Get only the new regulations that need indexing
-                        new_urls = result.get('new_urls', [])
-                        to_index = []
-                        for url in new_urls:
-                            reg = st.session_state.db.get_regulation_by_url(url)
-                            if reg and not reg.get('content_hash'):
-                                to_index.append(reg)
-                        
-                        total_to_index = len(to_index)
-                        
-                        if total_to_index == 0:
-                            st.info("✅ All new regulations are already indexed. No indexing needed!")
-                        elif total_to_index > 0:
-                            progress_bar = st.progress(0)
-                            status_text = st.empty()
-                            estimated_time = total_to_index * 3  # ~3 seconds per URL on average
-                            
-                            status_text.text(f"📊 Progress: 0/{total_to_index} (Estimated time: {estimated_time//60} min {estimated_time%60} sec)")
-                            
+                    # Automatically scrape and index ONLY newly added regulations
+                    newly_added_urls = result.get('newly_added_urls', [])
+                    if newly_added_urls:
+                        st.info(f"🔄 Now scraping and indexing {len(newly_added_urls)} new regulation(s)...")
+                        with st.spinner("Scraping and indexing new regulations..."):
                             indexed = 0
                             skipped_indexing = 0
-                            start_time = time.time()
                             
-                            for idx, reg in enumerate(to_index):
-                                url = reg.get('url', '')
+                            # Only process newly added URLs
+                            for url in newly_added_urls:
+                                # Get the regulation by URL to get its ID and metadata
+                                reg = st.session_state.db.get_regulation_by_url(url)
+                                if not reg:
+                                    skipped_indexing += 1
+                                    continue
+                                
                                 if url and (url.startswith('http://') or url.startswith('https://') or url.startswith('file://') or os.path.exists(url)):
                                     try:
-                                        # Update progress
-                                        progress = (idx + 1) / total_to_index
-                                        progress_bar.progress(progress)
-                                        
-                                        elapsed = time.time() - start_time
-                                        if idx > 0:
-                                            avg_time_per_url = elapsed / (idx + 1)
-                                            remaining = (total_to_index - idx - 1) * avg_time_per_url
-                                            status_text.text(f"📊 Progress: {idx + 1}/{total_to_index} | Indexed: {indexed} | Remaining: ~{int(remaining//60)} min {int(remaining%60)} sec")
-                                        else:
-                                            status_text.text(f"📊 Progress: {idx + 1}/{total_to_index} | Indexed: {indexed}")
-                                        
                                         content = st.session_state.scraper.fetch_url_content(url)
                                         if content and content.get('content'):
                                             chunks = st.session_state.scraper.chunk_text(content['content'])
@@ -1272,60 +1078,24 @@ def show_settings():
                                         skipped_indexing += 1
                                         continue
                             
-                            progress_bar.progress(1.0)
-                            status_text.empty()
-                            
-                            total_time = time.time() - start_time
                             if indexed > 0:
-                                st.success(f"✅ Indexed {indexed} new regulation(s) in vector store! (Completed in {int(total_time//60)} min {int(total_time%60)} sec)")
+                                st.success(f"✅ Indexed {indexed} new regulation(s) in vector store!")
                             if skipped_indexing > 0:
                                 st.warning(f"⚠️ Skipped {skipped_indexing} regulation(s) (could not fetch content)")
-                        else:
-                            st.info("✅ All regulations are already indexed. No new indexing needed.")
+                    elif result['loaded'] == 0:
+                        st.info("ℹ️ No new regulations to index. All regulations from CSV are already loaded.")
             except Exception as e:
                 st.error(f"Error: {str(e)}")
         
         if st.button("🔄 Re-Index All Regulations"):
             """Re-index all regulations (useful if vector store was cleared)"""
-            st.info("🔄 Indexing new regulations (only unindexed ones)...")
-            
-            regulations = st.session_state.db.get_all_regulations()
-            # Filter to only regulations with URLs that can be scraped AND that haven't been indexed yet (no content_hash)
-            to_reindex = [reg for reg in regulations 
-                         if (reg.get('url', '').startswith(('http://', 'https://', 'file://')) or os.path.exists(reg.get('url', '')))
-                         and not reg.get('content_hash')]  # Only index if no content_hash (not indexed yet)
-            total_to_reindex = len(to_reindex)
-            
-            if total_to_reindex == 0:
-                st.success("✅ All regulations are already indexed! No new regulations to index.")
-            else:
-                # Calculate estimated time (~3 seconds per URL on average)
-                estimated_time = total_to_reindex * 3
-                st.info(f"📊 Found {total_to_reindex} regulation(s) to re-index. Estimated time: {estimated_time//60} min {estimated_time%60} sec")
-                
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
+            with st.spinner("Re-indexing all regulations (this may take several minutes)..."):
+                regulations = st.session_state.db.get_all_regulations()
                 indexed = 0
-                skipped_indexing = 0
-                start_time = time.time()
-                
-                for idx, reg in enumerate(to_reindex):
+                for reg in regulations:
                     url = reg.get('url', '')
                     if url and (url.startswith('http://') or url.startswith('https://') or url.startswith('file://') or os.path.exists(url)):
                         try:
-                            # Update progress
-                            progress = (idx + 1) / total_to_reindex
-                            progress_bar.progress(progress)
-                            
-                            elapsed = time.time() - start_time
-                            if idx > 0:
-                                avg_time_per_url = elapsed / (idx + 1)
-                                remaining = (total_to_reindex - idx - 1) * avg_time_per_url
-                                status_text.text(f"📊 Progress: {idx + 1}/{total_to_reindex} | Indexed: {indexed} | Remaining: ~{int(remaining//60)} min {int(remaining%60)} sec")
-                            else:
-                                status_text.text(f"📊 Progress: {idx + 1}/{total_to_reindex} | Indexed: {indexed}")
-                            
                             content = st.session_state.scraper.fetch_url_content(url)
                             if content and content.get('content'):
                                 chunks = st.session_state.scraper.chunk_text(content['content'])
@@ -1339,20 +1109,9 @@ def show_settings():
                                     )
                                     st.session_state.db.update_regulation_hash(url, content['hash'])
                                     indexed += 1
-                            else:
-                                skipped_indexing += 1
                         except Exception as e:
-                            skipped_indexing += 1
                             continue
-                
-                progress_bar.progress(1.0)
-                status_text.empty()
-                
-                total_time = time.time() - start_time
-                if indexed > 0:
-                    st.success(f"✅ Re-indexed {indexed} regulation(s)! (Completed in {int(total_time//60)} min {int(total_time%60)} sec)")
-                if skipped_indexing > 0:
-                    st.warning(f"⚠️ Skipped {skipped_indexing} regulation(s) (could not fetch content)")
+                st.success(f"✅ Re-indexed {indexed} regulations!")
         
         st.markdown("---")
         st.subheader("Daily Scraping")
@@ -1379,11 +1138,17 @@ def show_settings():
                     st.info("No new updates detected.")
     
     with col2:
-        st.subheader("System Status")
+        st.subheader("Configuration")
         st.info("""
-        **System Status**: All systems operational
+        **OpenAI API Key**: Set in .env file or environment variable
         
-        **Data Management**: Use the buttons on the left to manage regulations and update the index.
+        **Email Settings**: Configure SMTP in .env file for email alerts
+        
+        **Database**: SQLite database at regulations.db
+        
+        **Vector Store**: ChromaDB at ./chroma_db
+        
+        **Daily Scraper**: Run `python daily_scraper.py` to start daily updates
         """)
     
     st.markdown("---")

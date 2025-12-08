@@ -4,7 +4,6 @@ Database module for storing regulations and updates
 import sqlite3
 import json
 import hashlib
-import os
 from datetime import datetime
 from typing import List, Dict, Optional
 import pandas as pd
@@ -68,27 +67,6 @@ class RegulationDB:
             )
         """)
         
-        # Alerts log table for duplicate prevention
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS alerts_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                city TEXT NOT NULL,
-                regulation_title TEXT NOT NULL,
-                category TEXT,
-                change_hash TEXT NOT NULL,
-                date_emailed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                regulation_id INTEGER,
-                update_id INTEGER,
-                UNIQUE(city, regulation_title, category, change_hash)
-            )
-        """)
-        
-        # Add city column to regulations if it doesn't exist (for better tracking)
-        try:
-            cursor.execute("ALTER TABLE regulations ADD COLUMN city TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
         conn.commit()
         conn.close()
     
@@ -97,13 +75,33 @@ class RegulationDB:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        cursor.execute("""
-            INSERT OR REPLACE INTO regulations (source_name, url, type, category, content_hash, last_checked)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (source_name, url, type, category, content_hash, datetime.now()))
+        # Check if regulation already exists
+        cursor.execute("SELECT id, last_checked FROM regulations WHERE url = ?", (url,))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Update existing - preserve last_checked if it exists, otherwise set to now
+            existing_id, existing_date = existing
+            if existing_date is None or existing_date == '' or existing_date == 'Never':
+                last_checked = datetime.now()
+            else:
+                last_checked = existing_date
+            
+            cursor.execute("""
+                UPDATE regulations 
+                SET source_name = ?, type = ?, category = ?, content_hash = ?, last_checked = ?
+                WHERE id = ?
+            """, (source_name, type, category, content_hash, last_checked, existing_id))
+            regulation_id = existing_id
+        else:
+            # Insert new - always set last_checked to now
+            cursor.execute("""
+                INSERT INTO regulations (source_name, url, type, category, content_hash, last_checked)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (source_name, url, type, category, content_hash, datetime.now()))
+            regulation_id = cursor.lastrowid
         
         conn.commit()
-        regulation_id = cursor.lastrowid
         conn.close()
         return regulation_id
     
@@ -243,15 +241,6 @@ class RegulationDB:
         conn.close()
         return emails
     
-    def get_all_subscribers(self) -> List[str]:
-        """Get all active subscribers (for Texas-Statewide alerts)"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT email FROM email_alerts WHERE active = 1")
-        emails = [row[0] for row in cursor.fetchall()]
-        conn.close()
-        return emails
-    
     def save_compliance_check(self, document_name: str, is_compliant: bool, 
                              issues_found: str, result_summary: str):
         """Save compliance check result"""
@@ -265,125 +254,40 @@ class RegulationDB:
         conn.close()
     
     def load_regulations_from_csv(self, csv_path: str):
-        """Load regulations from CSV or Excel file - REQUIRED: sources.xlsx with columns: category, city, level, hyperlink
-        Returns: {'loaded': count of new regulations, 'skipped': count of invalid/skipped, 'existing': count of already existing, 'new_urls': list of new URLs}
-        """
+        """Load regulations from CSV file and return newly added URLs"""
+        import os
+        df = pd.read_csv(csv_path)
         loaded = 0
         skipped = 0
-        existing = 0
-        new_urls = []
-        
-        # Check if file is Excel (.xlsx) or CSV
-        if csv_path.endswith('.xlsx') or csv_path.endswith('.xls'):
-            try:
-                # Read Excel file
-                df = pd.read_excel(csv_path, engine='openpyxl')
-            except ImportError:
-                # Try with xlrd for older Excel files
-                try:
-                    df = pd.read_excel(csv_path, engine='xlrd')
-                except:
-                    raise ImportError("Please install openpyxl: pip install openpyxl")
-            except Exception as e:
-                raise Exception(f"Error reading Excel file: {str(e)}")
-        else:
-            # Read CSV file
-            df = pd.read_csv(csv_path)
-        
-        # Normalize column names (case-insensitive, handle variations)
-        df.columns = df.columns.str.strip().str.lower()
-        
-        # Map column names to standard names
-        column_mapping = {
-            'hyperlink': 'hyperlink',
-            'url': 'hyperlink',
-            'link': 'hyperlink',
-            'category': 'category',
-            'regulation category': 'category',
-            'regulation_category': 'category',
-            'city': 'city',
-            'city_name': 'city',
-            'level': 'level',
-            'type': 'level',
-            'law_name': 'source_name',
-            'source_name': 'source_name',
-            'source name': 'source_name',
-            'name': 'source_name'
-        }
-        
-        # Rename columns to standard names
-        for old_col in df.columns:
-            for key, value in column_mapping.items():
-                if old_col == key or old_col.replace('_', ' ').replace('-', ' ') == key.replace('_', ' '):
-                    if value not in df.columns or df.columns.get_loc(value) == df.columns.get_loc(old_col):
-                        df.rename(columns={old_col: value}, inplace=True)
-                    break
-        
-        # REQUIRED COLUMNS: category, level, hyperlink (city is optional, defaults to Texas-Statewide)
-        required_columns = ['category', 'level', 'hyperlink']
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        
-        if missing_columns:
-            raise ValueError(f"Missing required columns in sources file: {', '.join(missing_columns)}. Required columns: category, level, hyperlink (city is optional)")
+        newly_added_urls = []
         
         for _, row in df.iterrows():
-            # Get required columns
-            url = str(row.get("hyperlink", "")).strip()
-            category = str(row.get("category", "")).strip()
-            city = str(row.get("city", "Texas-Statewide")).strip() if "city" in df.columns else "Texas-Statewide"
-            level = str(row.get("level", "")).strip()
+            url = str(row.get("URL", "")).strip()
+            source_name = str(row.get("Source Name", "")).strip()
             
-            # Get optional source_name if available
-            source_name = str(row.get("source_name", "")).strip()
-            if not source_name:
-                # Construct source_name from category and city
-                source_name = f"{category} - {city}" if category and city else "Unknown Source"
-            
-            # Determine type from level
-            level_lower = level.lower()
-            if 'federal' in level_lower:
-                reg_type = "Federal"
-            elif 'state' in level_lower or 'texas' in level_lower:
-                reg_type = "State"
-            elif 'city' in level_lower or 'local' in level_lower:
-                reg_type = "City"
-            else:
-                # Try to infer from category or city
-                if category.lower() == "federal":
-                    reg_type = "Federal"
-                elif city and city != "Texas-Statewide":
-                    reg_type = "City"
-                else:
-                    reg_type = "State"
-            
-            # Skip invalid URLs (allow http, https, and file paths)
-            if not url or (not url.startswith(('http://', 'https://', 'file://')) and not os.path.exists(url)):
+            # Skip invalid URLs (but allow local file paths)
+            if not url:
+                skipped += 1
+                continue
+            # Allow http://, https://, file://, and local file paths
+            if not (url.startswith(('http://', 'https://', 'file://')) or os.path.exists(url)):
                 skipped += 1
                 continue
             
             # Check if regulation already exists
-            existing_reg = self.get_regulation_by_url(url)
-            if existing_reg:
-                # Regulation already exists - skip adding it again
-                existing += 1
-                continue
+            existing = self.get_regulation_by_url(url)
+            if existing:
+                skipped += 1
+                continue  # Skip if already exists
             
-            # Add city to category if it's city-specific
-            if city and city != "Texas-Statewide":
-                category = f"{category} - {city}"
-            
-            self.add_regulation(
+            # Add new regulation
+            regulation_id = self.add_regulation(
                 source_name=source_name,
                 url=url,
-                type=reg_type,
-                category=category
+                type=str(row.get("Type", "")).strip(),
+                category=str(row.get("Regulation Category", "Other")).strip()
             )
             loaded += 1
-            new_urls.append(url)
+            newly_added_urls.append(url)
         
-        return {
-            "loaded": loaded,
-            "skipped": skipped,
-            "existing": existing,
-            "new_urls": new_urls
-        }
+        return {"loaded": loaded, "skipped": skipped, "newly_added_urls": newly_added_urls}
