@@ -44,11 +44,23 @@ h2, h3 { font-weight: 600; margin-top: 1.25rem !important; }
 /* Hide sidebar completely - using top-right menu instead */
 [data-testid="stSidebar"] { display: none; }
 [data-testid="stSidebar"] + div { margin-left: 0 !important; }
+/* Sticky top bar (menu + deploy) */
+.sticky-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10000;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.5rem 0;
+  margin-bottom: 0.75rem;
+}
 /* Hero header: image background with title overlay */
 .hero-header { position: relative; min-height: 200px; background-size: cover; background-position: center; display: flex; align-items: center; padding: 2rem 2rem 2rem 2rem; border-radius: 10px; margin-bottom: 1.5rem; overflow: hidden; }
 .hero-overlay { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.4) 100%); border-radius: 10px; }
 .hero-content { position: relative; z-index: 1; }
-.hero-header h1, .hero-header .hero-title, h1.hero-title { color: #ffffff !important; font-size: 2.25rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 0.35rem 0 !important; }
+.hero-header, .hero-header * { color: #ffffff !important; }
+.hero-header h1, .hero-header .hero-title, h1.hero-title { color: #ffffff !important; font-size: 2.25rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 0.35rem 0 !important; text-shadow: 0 2px 12px rgba(0,0,0,0.55); }
 .hero-subtitle { color: #e5e5e5 !important; font-size: 1.05rem; margin: 0 !important; opacity: 0.95; }
 /* Cards and expanders */
 [data-testid="stExpander"], .element-container { background-color: transparent; }
@@ -58,12 +70,12 @@ div[data-testid="stVerticalBlock"] { background-color: transparent; }
 /* Floating chat button and panel */
 .chat-widget-container { position: fixed; bottom: 24px; right: 24px; z-index: 9998; pointer-events: none; }
 .chat-widget-container * { pointer-events: auto; }
-.chat-fab { position: absolute; bottom: 0; right: 0; width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: white; border: none; cursor: pointer; box-shadow: 0 4px 14px rgba(37,99,235,0.45); font-size: 24px; display: flex; align-items: center; justify-content: center; }
+.chat-fab { position: absolute; bottom: 0; right: 0; width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: white; border: none; cursor: pointer; box-shadow: 0 4px 14px rgba(37,99,235,0.45); font-size: 24px; display: flex; align-items: center; justify-content: center; text-decoration: none; }
 .chat-fab:hover { background: #1d4ed8; }
 .chat-panel { position: absolute; bottom: 70px; right: 0; z-index: 9999; width: 380px; max-width: calc(100vw - 48px); height: 500px; background: #fff; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); display: none; flex-direction: column; overflow: hidden; }
 .chat-panel.open { display: flex; }
 .chat-panel-header { padding: 14px 16px; background: #2563eb; color: white; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
-.chat-panel-close { background: none; border: none; color: white; font-size: 22px; cursor: pointer; line-height: 1; padding: 0 4px; }
+.chat-panel-close { background: none; border: none; color: white !important; font-size: 22px; cursor: pointer; line-height: 1; padding: 0 4px; text-decoration: none; }
 .chat-panel-messages { flex: 1; overflow-y: auto; padding: 12px; background: #f8fafc; }
 .chat-msg { margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; font-size: 14px; line-height: 1.5; }
 .chat-msg.user { background: #2563eb; color: white; margin-left: 24px; }
@@ -72,6 +84,10 @@ div[data-testid="stVerticalBlock"] { background-color: transparent; }
 .chat-panel-form form { display: flex; gap: 8px; }
 .chat-panel-form input { flex: 1; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; }
 .chat-panel-form button { padding: 10px 16px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; }
+
+/* Centered content blocks (Home intro) */
+.centered { text-align: center; }
+.centered p { max-width: 900px; margin: 0.5rem auto; }
 </style>
 """
 
@@ -115,7 +131,8 @@ def _process_floating_chat_message():
     chat_msg = st.query_params.get("chat_msg")
     if not chat_msg:
         return
-    msg = urllib.parse.unquote_plus(chat_msg)
+    # Streamlit already decodes query params
+    msg = str(chat_msg)
     if not msg.strip():
         if "chat_msg" in st.query_params:
             del st.query_params["chat_msg"]
@@ -131,7 +148,7 @@ def _process_floating_chat_message():
 
 
 def _render_floating_chat():
-    """Inject floating chat button and panel. Use inline handlers (Streamlit strips script tags)."""
+    """Floating chat widget (no JS): open via query params + GET form submit."""
     if "home_chat_history" not in st.session_state:
         st.session_state.home_chat_history = []
     history = st.session_state.home_chat_history
@@ -141,17 +158,17 @@ def _render_floating_chat():
         escaped = html.escape(m["content"]).replace("\n", "<br/>")
         messages_html += f'<div class="chat-msg {cls}">{escaped}</div>'
     open_state = "open" if st.query_params.get("chat_open") else ""
-    # Inline onclick/onsubmit: same container so this FAB toggles this panel (works with duplicate widgets)
     st.markdown(
         f"""
         <div class="chat-widget-container">
-            <div class="chat-fab" title="Open chat" onclick="var c=this.nextElementSibling; c.classList.toggle('open');">💬</div>
+            <a class="chat-fab" title="Open chat" href="?chat_open=1">💬</a>
             <div class="chat-panel {open_state}">
-                <div class="chat-panel-header">Chat <button type="button" class="chat-panel-close" onclick="this.closest('.chat-panel').classList.remove('open');">×</button></div>
+                <div class="chat-panel-header">Chat <a class="chat-panel-close" href="?" aria-label="Close">×</a></div>
                 <div class="chat-panel-messages">{messages_html or '<p style="color:#64748b;font-size:13px;">Ask a question about housing regulations.</p>'}</div>
                 <div class="chat-panel-form">
-                    <form onsubmit="var i=this.querySelector('input[type=text]'); var v=(i&amp;&amp;i.value||'').trim(); if(v){{ window.location.href='?chat_msg='+encodeURIComponent(v)+'&amp;chat_open=1'; }} return false;">
-                        <input type="text" name="msg" placeholder="Type your question..." autocomplete="off" />
+                    <form method="get" action="">
+                        <input type="hidden" name="chat_open" value="1" />
+                        <input type="text" name="chat_msg" placeholder="Type your question..." autocomplete="off" />
                         <button type="submit">Send</button>
                     </form>
                 </div>
@@ -168,20 +185,10 @@ def main():
     _process_floating_chat_message()
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
     
-    # Hero: building image with title overlaid, menu top-right
-    header_col1, header_col2 = st.columns([4, 1])
-    with header_col1:
-        hero_html = f"""
-        <div class="hero-header" style="background-image: url('{HERO_IMAGE_URL}');">
-            <div class="hero-overlay"></div>
-            <div class="hero-content">
-                <h1 class="hero-title">MULTI-FAMILY REAL ESTATE</h1>
-                <p class="hero-subtitle">Ask questions, check compliance, and stay updated on Texas housing regulations.</p>
-            </div>
-        </div>
-        """
-        st.markdown(hero_html, unsafe_allow_html=True)
-    with header_col2:
+    # Sticky top bar (stays visible while scrolling): Menu + Deploy
+    st.markdown('<div class="sticky-topbar">', unsafe_allow_html=True)
+    top_col1, top_col2, top_col3 = st.columns([6, 1, 1])
+    with top_col2:
         with st.popover("☰  Menu"):
             st.markdown("**Go to**")
             for p in PAGES:
@@ -190,6 +197,27 @@ def main():
                     st.rerun()
             st.markdown("---")
             st.caption(LEGAL_DISCLAIMER)
+    with top_col3:
+        with st.popover("🚀 Deploy"):
+            st.markdown("**Deploy this app**")
+            st.markdown("- Easiest: Streamlit Community Cloud")
+            st.link_button("Open Streamlit Cloud", "https://streamlit.io/cloud")
+            st.markdown("---")
+            st.markdown("If deploying elsewhere, make sure your host runs:")
+            st.code("pip install -r requirements.txt\nstreamlit run app.py", language="bash")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Hero: full width title over image
+    hero_html = f"""
+    <div class="hero-header" style="background-image: url('{HERO_IMAGE_URL}');">
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
+            <h1 class="hero-title">MULTI-FAMILY REAL ESTATE</h1>
+            <p class="hero-subtitle">Ask questions, check compliance, and stay updated on Texas housing regulations.</p>
+        </div>
+    </div>
+    """
+    st.markdown(hero_html, unsafe_allow_html=True)
     
     page = st.session_state.current_page
     
@@ -223,16 +251,19 @@ def _clean_qa_answer(text):
 def show_home():
     """Front page: project description, states, and chatbot."""
     st.markdown("---")
-    st.markdown("""
-    ### What is this platform?
-
-    **Multi-Family Real Estate** is an AI-powered assistant for housing regulation compliance.  
-    It helps property managers, landlords and leasing professionals stay on top of rules and check  
-    lease documents against current regulations.
-
-    **Who it’s for:** Property managers, landlords, leasing agents, and anyone who needs to understand  
-    or comply with housing rules in Dallas, Houston, Austin, San Antonio and Texas statewide.
-    """)
+    st.markdown(
+        """
+        <div class="centered">
+            <h3>What is this platform?</h3>
+            <p><strong>Multi-Family Real Estate</strong> is an AI-powered assistant for housing regulation compliance.
+            It helps property managers, landlords and leasing professionals stay on top of rules and check lease
+            documents against current regulations.</p>
+            <p><strong>Who it’s for:</strong> Property managers, landlords, leasing agents, and anyone who needs to
+            understand or comply with housing rules in Dallas, Houston, Austin, San Antonio and Texas statewide.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     st.markdown("---")
     st.subheader("🗺️ States")
     st.caption("Select a state, then choose a city where available. Click Go to see links.")
