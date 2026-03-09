@@ -13,14 +13,67 @@ from qa_system import QASystem
 from config import SUPPORTED_CITIES, REGULATION_CATEGORIES, LEGAL_DISCLAIMER, SOURCES_FILE
 import time
 import os
+import html
+import urllib.parse
 
 # Page configuration
 st.set_page_config(
-    page_title="Intelligence Platform",
+    page_title="Multi-Family Real Estate",
     page_icon="🏠",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
+
+# Custom CSS for dark theme with black background
+CUSTOM_CSS = """
+<style>
+/* White background for main and sidebar */
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { background-color: #ffffff; }
+[data-testid="stSidebar"] { background-color: #f8fafc; }
+.block-container { padding-top: 1.5rem; padding-bottom: 2rem; background-color: #ffffff; }
+/* Dark text */
+h1, h2, h3, p, label, span, .stMarkdown { color: #1e293b !important; }
+h1 { font-weight: 700; letter-spacing: -0.02em; margin-bottom: 0.25rem !important; }
+.subtitle-tagline { color: #64748b !important; font-size: 1.05rem; margin-bottom: 1.5rem; }
+h2, h3 { font-weight: 600; margin-top: 1.25rem !important; }
+[data-testid="stSidebar"] hr { margin: 0.75rem 0; border-color: #e2e8f0; }
+.stButton > button { border-radius: 8px; font-weight: 500; }
+[data-testid="stMetricValue"] { font-weight: 600; color: #1e293b !important; }
+[data-testid="stMetricLabel"] { color: #64748b !important; }
+.section-help { color: #64748b !important; font-size: 0.9rem; margin-bottom: 1rem; }
+/* Hide sidebar completely - using top-right menu instead */
+[data-testid="stSidebar"] { display: none; }
+[data-testid="stSidebar"] + div { margin-left: 0 !important; }
+/* Hero header: image background with title overlay */
+.hero-header { position: relative; min-height: 200px; background-size: cover; background-position: center; display: flex; align-items: center; padding: 2rem 2rem 2rem 2rem; border-radius: 10px; margin-bottom: 1.5rem; overflow: hidden; }
+.hero-overlay { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.4) 100%); border-radius: 10px; }
+.hero-content { position: relative; z-index: 1; }
+.hero-header h1, .hero-header .hero-title, h1.hero-title { color: #ffffff !important; font-size: 2.25rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 0.35rem 0 !important; }
+.hero-subtitle { color: #e5e5e5 !important; font-size: 1.05rem; margin: 0 !important; opacity: 0.95; }
+/* Cards and expanders */
+[data-testid="stExpander"], .element-container { background-color: transparent; }
+/* Dataframes and inputs */
+[data-testid="stDataFrame"], .stDataFrame { background-color: #f8fafc !important; }
+div[data-testid="stVerticalBlock"] { background-color: transparent; }
+/* Floating chat button and panel */
+.chat-widget-container { position: fixed; bottom: 24px; right: 24px; z-index: 9998; pointer-events: none; }
+.chat-widget-container * { pointer-events: auto; }
+.chat-fab { position: absolute; bottom: 0; right: 0; width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: white; border: none; cursor: pointer; box-shadow: 0 4px 14px rgba(37,99,235,0.45); font-size: 24px; display: flex; align-items: center; justify-content: center; }
+.chat-fab:hover { background: #1d4ed8; }
+.chat-panel { position: absolute; bottom: 70px; right: 0; z-index: 9999; width: 380px; max-width: calc(100vw - 48px); height: 500px; background: #fff; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); display: none; flex-direction: column; overflow: hidden; }
+.chat-panel.open { display: flex; }
+.chat-panel-header { padding: 14px 16px; background: #2563eb; color: white; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+.chat-panel-close { background: none; border: none; color: white; font-size: 22px; cursor: pointer; line-height: 1; padding: 0 4px; }
+.chat-panel-messages { flex: 1; overflow-y: auto; padding: 12px; background: #f8fafc; }
+.chat-msg { margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; font-size: 14px; line-height: 1.5; }
+.chat-msg.user { background: #2563eb; color: white; margin-left: 24px; }
+.chat-msg.assistant { background: #e2e8f0; color: #1e293b; margin-right: 24px; }
+.chat-panel-form { padding: 12px; border-top: 1px solid #e2e8f0; background: #fff; }
+.chat-panel-form form { display: flex; gap: 8px; }
+.chat-panel-form input { flex: 1; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; }
+.chat-panel-form button { padding: 10px 16px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; }
+</style>
+"""
 
 # Initialize session state
 if 'db' not in st.session_state:
@@ -37,103 +90,253 @@ if 'email_system' not in st.session_state:
     st.session_state.email_system = EmailAlertSystem()
 if 'qa_system' not in st.session_state:
     st.session_state.qa_system = QASystem()
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "🏠 Home"
+
+PAGES = [
+    "🏠 Home",
+    "💬 Agent",
+    "📚 Regulation Explorer",
+    "📢 Update Log",
+    "📧 Email Alerts",
+    "⚙️ Settings",
+]
+
+STATES = ["Texas", "California", "Indiana"]
+TEXAS_CITIES = ["Dallas", "Austin", "San Antonio", "Houston"]
+
+# Stock image: multi-family / apartments (Unsplash, free to use)
+HERO_IMAGE_URL = "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=1200"
+
+def _process_floating_chat_message():
+    """If chat_msg in query params, add user message, get reply, add to history, clear param."""
+    if "home_chat_history" not in st.session_state:
+        st.session_state.home_chat_history = []
+    chat_msg = st.query_params.get("chat_msg")
+    if not chat_msg:
+        return
+    msg = urllib.parse.unquote_plus(chat_msg)
+    if not msg.strip():
+        if "chat_msg" in st.query_params:
+            del st.query_params["chat_msg"]
+        return
+    st.session_state.home_chat_history.append({"role": "user", "content": msg})
+    result = st.session_state.qa_system.answer_question_with_context(
+        msg, st.session_state.home_chat_history
+    )
+    answer = _clean_qa_answer(result.get("answer", ""))
+    st.session_state.home_chat_history.append({"role": "assistant", "content": answer})
+    if "chat_msg" in st.query_params:
+        del st.query_params["chat_msg"]
+
+
+def _render_floating_chat():
+    """Inject floating chat button and panel. Use inline handlers (Streamlit strips script tags)."""
+    if "home_chat_history" not in st.session_state:
+        st.session_state.home_chat_history = []
+    history = st.session_state.home_chat_history
+    messages_html = ""
+    for m in history:
+        cls = "user" if m["role"] == "user" else "assistant"
+        escaped = html.escape(m["content"]).replace("\n", "<br/>")
+        messages_html += f'<div class="chat-msg {cls}">{escaped}</div>'
+    open_state = "open" if st.query_params.get("chat_open") else ""
+    # Inline onclick/onsubmit: same container so this FAB toggles this panel (works with duplicate widgets)
+    st.markdown(
+        f"""
+        <div class="chat-widget-container">
+            <div class="chat-fab" title="Open chat" onclick="var c=this.nextElementSibling; c.classList.toggle('open');">💬</div>
+            <div class="chat-panel {open_state}">
+                <div class="chat-panel-header">Chat <button type="button" class="chat-panel-close" onclick="this.closest('.chat-panel').classList.remove('open');">×</button></div>
+                <div class="chat-panel-messages">{messages_html or '<p style="color:#64748b;font-size:13px;">Ask a question about housing regulations.</p>'}</div>
+                <div class="chat-panel-form">
+                    <form onsubmit="var i=this.querySelector('input[type=text]'); var v=(i&amp;&amp;i.value||'').trim(); if(v){{ window.location.href='?chat_msg='+encodeURIComponent(v)+'&amp;chat_open=1'; }} return false;">
+                        <input type="text" name="msg" placeholder="Type your question..." autocomplete="off" />
+                        <button type="submit">Send</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 def main():
-    st.title("🏠 Intelligence Platform")
-    st.markdown("**AI-Powered Housing Regulation Compliance Assistant**")
+    if "home_chat_history" not in st.session_state:
+        st.session_state.home_chat_history = []
+    _process_floating_chat_message()
+    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
     
-    # Sidebar navigation
-    st.sidebar.title("Navigation")
+    # Hero: building image with title overlaid, menu top-right
+    header_col1, header_col2 = st.columns([4, 1])
+    with header_col1:
+        hero_html = f"""
+        <div class="hero-header" style="background-image: url('{HERO_IMAGE_URL}');">
+            <div class="hero-overlay"></div>
+            <div class="hero-content">
+                <h1 class="hero-title">MULTI-FAMILY REAL ESTATE</h1>
+                <p class="hero-subtitle">Ask questions, check compliance, and stay updated on Texas housing regulations.</p>
+            </div>
+        </div>
+        """
+        st.markdown(hero_html, unsafe_allow_html=True)
+    with header_col2:
+        with st.popover("☰  Menu"):
+            st.markdown("**Go to**")
+            for p in PAGES:
+                if st.button(p, key=f"nav_{p}", use_container_width=True):
+                    st.session_state.current_page = p
+                    st.rerun()
+            st.markdown("---")
+            st.caption(LEGAL_DISCLAIMER)
     
-    page = st.sidebar.radio(
-        "Select Page",
-        ["Intelligence Platform Agent", "Regulation Explorer", "Update Log", "Email Alerts", "Settings"]
-    )
-    
-    # Display legal disclaimer in sidebar
-    st.sidebar.markdown("---")
-    st.sidebar.markdown(LEGAL_DISCLAIMER)
+    page = st.session_state.current_page
     
     # Route to appropriate page
-    if page == "Intelligence Platform Agent":
+    if page == "🏠 Home":
+        show_home()
+    elif page == "💬 Agent":
         show_ip_agent_page()
-    elif page == "Regulation Explorer":
+    elif page == "📚 Regulation Explorer":
         show_regulation_explorer()
-    elif page == "Update Log":
+    elif page == "📢 Update Log":
         show_update_log()
-    elif page == "Email Alerts":
+    elif page == "📧 Email Alerts":
         show_email_alerts()
-    elif page == "Settings":
+    elif page == "⚙️ Settings":
         show_settings()
+    _render_floating_chat()
+
+def _clean_qa_answer(text):
+    """Remove raw context lines and notes from QA answer."""
+    if not text:
+        return text or ""
+    if "[Note:" in text:
+        text = text.split("[Note:")[0].strip()
+    if "From " in text and "(" in text:
+        lines = text.split("\n")
+        cleaned = [l for l in lines if not (l.strip().startswith("From ") and "(" in l and "):" in l) and not l.strip().startswith("---")]
+        text = "\n".join(cleaned).strip()
+    return text
 
 def show_home():
-    st.header("Welcome to the Housing Regulation Compliance Agent")
-    
+    """Front page: project description, states, and chatbot."""
+    st.markdown("---")
     st.markdown("""
-    This platform helps property managers and leasing professionals:
-    - 💬 **Ask Questions** - Get answers about regulations from our database
-    - 📋 **Track** housing regulations from federal, state, and city sources
-    - 🔍 **Check** lease documents for compliance issues
-    - 🔔 **Receive** alerts when regulations are updated (daily scraping)
-    - 📊 **Explore** organized regulatory information
-    
-    ### Key Features:
-    1. **Ask Questions**: Ask questions about regulations and get answers
-    2. **Regulation Explorer**: Browse and search all regulations
-    3. **Compliance Checker**: Upload lease documents for compliance analysis
-    4. **Update Log**: View recent regulation updates
-    5. **Email Alerts**: Subscribe to city-specific updates
+    ### What is this platform?
+
+    **Multi-Family Real Estate** is an AI-powered assistant for housing regulation compliance.  
+    It helps property managers, landlords and leasing professionals stay on top of rules and check  
+    lease documents against current regulations.
+
+    **Who it’s for:** Property managers, landlords, leasing agents, and anyone who needs to understand  
+    or comply with housing rules in Dallas, Houston, Austin, San Antonio and Texas statewide.
     """)
-    
-    # Statistics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
+    st.markdown("---")
+    st.subheader("🗺️ States")
+    st.caption("Select a state, then choose a city where available. Click Go to see links.")
+    state = st.selectbox("State", ["Select a state..."] + STATES, key="home_states_select")
+    city = None
+    if state and state == "Texas":
+        city = st.selectbox("City", ["Select a city..."] + TEXAS_CITIES, key="home_texas_city_select")
+        if city and city != "Select a city...":
+            st.info(f"**{state}** → **{city}**")
+    elif state and state != "Select a state...":
+        st.info(f"**{state}** — city options coming soon.")
+    if state and state != "Select a state...":
+        if st.button("Go", type="primary", key="states_go_btn"):
+            st.session_state.states_go_selection = (state, city if state == "Texas" else None)
+    if st.session_state.get("states_go_selection"):
+        go_state, go_city = st.session_state.states_go_selection
         regulations = st.session_state.db.get_all_regulations()
-        st.metric("Total Regulations", len(regulations))
-    
+        location_filter = go_city if (go_state == "Texas" and go_city) else go_state
+        filtered = [
+            r for r in regulations
+            if location_filter
+            and (
+                location_filter.lower() in (r.get("source_name") or "").lower()
+                or location_filter.lower() in (r.get("category") or "").lower()
+            )
+        ]
+        if not filtered and regulations:
+            filtered = [r for r in regulations if go_state.lower() in (r.get("source_name") or "").lower() or go_state.lower() in (r.get("category") or "").lower()]
+        if not filtered:
+            filtered = regulations
+        label = f"{go_state} → {go_city}" if go_city else go_state
+        st.markdown(f"**Links for {label}**")
+        for r in filtered:
+            name = r.get("source_name") or "Link"
+            url = r.get("url") or ""
+            if url.startswith("http"):
+                st.markdown(f"- [{name}]({url})")
+            else:
+                st.markdown(f"- {name}")
+        if not filtered:
+            st.caption("No regulation links in the database yet. Load regulations from CSV in Settings.")
+    st.markdown("---")
+    st.subheader("What you can do")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("""
+        **💬 Agent**  
+        Ask questions in plain English. Get answers about ESA, rent control, Fair Housing, and other  
+        Texas housing regulations, with sources.
+
+        **📚 Regulation Explorer**  
+        Search and browse all regulations in the database. Filter by category or city and open  
+        official source links.
+
+        **📢 Update Log**  
+        See when regulations changed. Run a check to detect new updates and review summaries.
+        """)
     with col2:
-        updates = st.session_state.db.get_recent_updates(limit=1000)
-        st.metric("Total Updates", len(updates))
-    
+        st.markdown("""
+        **📧 Email Alerts**  
+        Subscribe by city and get email when regulations change—daily summaries and instant alerts.
+
+        **📎 Compliance check**  
+        Upload a lease (PDF or DOCX) and ask “Is this compliant?” to get an analysis and suggested fixes.
+
+        **⚙️ Settings**  
+        Load regulations from CSV, re-index the database, and run manual update checks.
+        """)
+
+    st.markdown("---")
+    st.subheader("At a glance")
+    regulations = st.session_state.db.get_all_regulations()
+    updates = st.session_state.db.get_recent_updates(limit=1000)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Regulations in database", len(regulations))
+    with col2:
+        st.metric("Updates tracked", len(updates))
     with col3:
-        st.metric("Supported Cities", len(SUPPORTED_CITIES))
-    
+        st.metric("Cities supported", len(SUPPORTED_CITIES))
     with col4:
         st.metric("Categories", len(REGULATION_CATEGORIES))
-    
+
     st.markdown("---")
-    st.markdown("### Quick Actions")
-    
+    st.subheader("Quick actions")
     col1, col2 = st.columns(2)
-    
     with col1:
-        if st.button("🔄 Check for Updates", use_container_width=True):
+        if st.button("Check for updates now", use_container_width=True):
             with st.spinner("Checking for regulation updates..."):
-                updates = st.session_state.update_checker.check_for_updates()
-                if updates:
-                    st.success(f"✅ Found {len(updates)} new update(s)!")
-                    # Notify subscribers
-                    for update in updates:
-                        st.session_state.email_system.notify_subscribers(update)
-                    
-                    # Show updates
-                    for update in updates:
-                        with st.expander(f"📢 {update['source_name']} - Update Detected", expanded=True):
-                            st.markdown(f"**Summary:** {update['summary']}")
-                            st.markdown(f"**Affected Cities:** {', '.join(update.get('affected_cities', []))}")
-                            st.markdown(f"**URL:** {update.get('url', 'N/A')}")
-                            st.info("💡 Check the 'Update Log' page to see all updates, or check the 'emails' folder for email notifications.")
+                new_updates = st.session_state.update_checker.check_for_updates()
+                if new_updates:
+                    for u in new_updates:
+                        st.session_state.email_system.notify_subscribers(u)
+                    st.success(f"Found {len(new_updates)} new update(s). See Update Log for details.")
                 else:
-                    st.info("No new updates detected. All regulations are up to date.")
-    
+                    st.info("No new updates detected.")
     with col2:
-        if st.button("📥 Load Regulations from CSV", use_container_width=True):
+        if st.button("Load regulations from CSV", use_container_width=True):
             try:
                 result = st.session_state.db.load_regulations_from_csv(SOURCES_FILE)
-                st.success(f"Regulations loaded successfully! ({result['loaded']} loaded, {result['skipped']} skipped)")
+                st.success(f"Loaded {result['loaded']} regulation(s); {result['skipped']} skipped.")
             except Exception as e:
-                st.error(f"Error loading regulations: {str(e)}")
+                st.error(f"Error: {str(e)}")
 
 def show_ip_agent_page():
     """Main Intelligence Platform Agent page with integrated chat and compliance checker"""
@@ -190,27 +393,28 @@ def show_ip_agent_page():
         })
         st.rerun()
     
-    st.header("💬 Intelligence Platform Agent")
+    st.header("💬 Ask anything about housing regulations")
     
     # Display example questions as first message if chat is empty
     if len(st.session_state.chat_history) == 0:
         with st.chat_message("assistant"):
-            st.markdown("Hello! I'm your Intelligence Platform Agent. 👋\n\n**Try asking:**")
+            st.markdown("Hi! I can answer questions about Texas housing regulations and check lease documents for compliance.")
+            st.markdown("**Try one of these:**")
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("💡 Updated law in Dallas", key="ex1", use_container_width=True):
+                if st.button("Updated law in Dallas", key="ex1", use_container_width=True):
                     process_question("Updated law in Dallas")
-                if st.button("💡 What is ESA?", key="ex2", use_container_width=True):
+                if st.button("What is ESA?", key="ex2", use_container_width=True):
                     process_question("What is ESA?")
-                if st.button("💡 What is ESA law in Austin?", key="ex3", use_container_width=True):
+                if st.button("ESA law in Austin", key="ex3", use_container_width=True):
                     process_question("What is ESA law in Austin?")
             with col2:
-                if st.button("💡 New rent control law in Dallas", key="ex4", use_container_width=True):
+                if st.button("Rent control in Dallas", key="ex4", use_container_width=True):
                     process_question("New rent control law in Dallas")
-                if st.button("💡 What is rent control?", key="ex5", use_container_width=True):
+                if st.button("What is rent control?", key="ex5", use_container_width=True):
                     process_question("What is rent control?")
-                if st.button("💡 Attach document to check compliance", key="ex6", use_container_width=True):
-                    st.info("📎 Please use the file uploader below to attach a document, then ask 'Is this compliant?' or 'Check this document for compliance'")
+                if st.button("Check a lease for compliance", key="ex6", use_container_width=True):
+                    st.info("Use the file uploader below to attach a PDF or DOCX, then ask \"Is this compliant?\"")
     
     # Display chat history
     for message in st.session_state.chat_history:
@@ -267,34 +471,20 @@ def show_ip_agent_page():
                                 else:
                                     st.markdown(f"📄 {source.get('source', 'Unknown')}")
     
-    # File uploader with expandable toolbar
+    # File uploader
     st.markdown("---")
-    with st.expander("📎 Document Compliance Checker - Click to learn more", expanded=False):
-        st.markdown("""
-**Purpose:** Upload lease documents (PDF or DOCX) to check compliance with Texas housing regulations.
-
-**What this does:**
-- Analyzes your lease document clause-by-clause
-- Identifies compliance issues with Texas housing laws
-- Provides specific fixes and action items
-- Checks for ESA, Fair Housing, rent control, and other regulation violations
-
-**How to use:**
-1. Click "Browse files" below to upload your lease document
-2. Once uploaded, ask "Is this compliant?" or "Check this document"
-3. The system will analyze and provide a detailed compliance report
-        """)
+    with st.expander("📎 Check a lease for compliance", expanded=False):
+        st.caption("Upload a PDF or DOCX lease. We’ll analyze it for Texas housing rules (ESA, Fair Housing, rent control, etc.) and suggest fixes. After uploading, ask \"Is this compliant?\" or \"Check this document.\"")
     
-    uploaded_file = st.file_uploader("📎 Attach lease document (PDF/DOCX)", type=['pdf', 'docx', 'doc'], key="chat_file_upload", help="Upload a lease document to check compliance with Texas housing regulations")
+    uploaded_file = st.file_uploader("Attach lease (PDF or DOCX)", type=['pdf', 'docx', 'doc'], key="chat_file_upload", help="Optional. Upload to get a compliance check.")
     
-    # Show file info if uploaded
     if uploaded_file is not None:
-        st.info(f"📎 **File attached:** {uploaded_file.name} ({uploaded_file.size:,} bytes). Ask 'Is this compliant?' or 'Check this document' to analyze it.")
+        st.success(f"**{uploaded_file.name}** attached. Ask \"Is this compliant?\" to analyze.")
     
     # Chat input
-    chat_placeholder = "Ask a question about Texas housing regulations..."
+    chat_placeholder = "Ask about regulations or type your question..."
     if uploaded_file is not None:
-        chat_placeholder = f"📎 {uploaded_file.name} attached. Ask 'Is this compliant?' or type your question..."
+        chat_placeholder = f"e.g. Is this compliant? (or ask anything)"
     
     if prompt := st.chat_input(chat_placeholder):
         # Handle file upload - check both current upload and pending file
@@ -355,7 +545,7 @@ def show_ip_agent_page():
                             # Ask for city
                             answer_text = "📍 **Which city are you checking compliance for?**\n\nPlease type the city name (Dallas, Houston, Austin, or San Antonio) in your next message, or select from the dropdown below."
                             st.markdown(answer_text)
-                            city = st.selectbox("Select City:", ["Select..."] + SUPPORTED_CITIES, key="compliance_city_select")
+                            city = st.selectbox("City", ["Select..."] + SUPPORTED_CITIES, key="compliance_city_select")
                             if city != "Select...":
                                 selected_city = city
                                 st.session_state.compliance_city = city
@@ -590,34 +780,15 @@ def show_ip_agent_page():
 
 def show_regulation_explorer():
     st.header("📚 Regulation Explorer")
+    st.caption("Search and browse housing regulations. Use the filters below to narrow by category or city.")
     
-    # Page description - black text on white
-    st.markdown("""
-**📚 Regulation Explorer** - Browse and search all housing regulations in the database.
-
-**What you can do here:**
-- Search regulations by keyword or topic
-- Browse all regulations by category (Fair Housing, ESA, Rent Caps, etc.)
-- View regulation details, URLs, and last checked dates
-- Filter by regulation type and category
-
-**How to use:**
-1. Use the search box below to find specific regulations
-2. Browse the table to see all regulations
-3. Click on URLs to view the original source documents
-    """)
-    
-    # Search and filter
     col1, col2, col3 = st.columns(3)
-    
     with col1:
-        search_query = st.text_input("Search Regulations", "")
-    
+        search_query = st.text_input("Search", placeholder="Keyword or topic...")
     with col2:
-        category_filter = st.selectbox("Filter by Category", ["All"] + REGULATION_CATEGORIES)
-    
+        category_filter = st.selectbox("Category", ["All"] + REGULATION_CATEGORIES)
     with col3:
-        city_filter = st.selectbox("Filter by City", ["All"] + SUPPORTED_CITIES)
+        city_filter = st.selectbox("City", ["All"] + SUPPORTED_CITIES)
     
     # Get regulations
     regulations = st.session_state.db.get_all_regulations()
@@ -641,8 +812,7 @@ def show_regulation_explorer():
                     st.markdown(f"**URL**: {result['metadata'].get('url', 'N/A')}")
                     st.markdown(f"**Category**: {result['metadata'].get('category', 'N/A')}")
     
-    # Display regulations table
-    st.subheader("All Regulations")
+    st.subheader("All regulations")
     
     if regulations:
         df = pd.DataFrame(regulations)
@@ -805,27 +975,10 @@ def show_compliance_checker():
                     st.error(f"Error checking compliance: {str(e)}")
 
 def show_update_log():
-    st.header("📢 Regulation Update Log")
+    st.header("📢 Update Log")
+    st.caption("See when regulations changed. Use \"Check for updates\" to scan for new changes.")
     
-    # Page description - black text on white
-    st.markdown("""
-**📢 Update Log** - Track all regulation changes and updates.
-
-**What you can do here:**
-- View all regulation updates that have been detected
-- See summaries of what changed in each regulation
-- Filter updates by city (Dallas, Houston, Austin, San Antonio)
-- Check when regulations were last updated
-- Manually trigger an update check
-
-**How to use:**
-1. Click "Check for Updates Now" to scan for new changes
-2. Use the filters to find updates for specific cities
-3. Expand any update to see detailed summary and affected cities
-    """)
-    
-    # Check for updates button
-    if st.button("🔄 Check for Updates Now"):
+    if st.button("Check for updates now"):
         with st.spinner("Checking for updates..."):
             updates = st.session_state.update_checker.check_for_updates()
             if updates:
@@ -836,20 +989,18 @@ def show_update_log():
             else:
                 st.info("No new updates detected.")
     
-    # Display recent updates
-    st.subheader("Recent Updates")
+    st.subheader("Recent updates")
     
     # Show count
     updates = st.session_state.db.get_recent_updates(limit=50)
     if updates:
         st.metric("Total Updates", len(updates))
     
-    # Filter options
     col1, col2 = st.columns(2)
     with col1:
-        city_filter = st.selectbox("Filter by City", ["All"] + SUPPORTED_CITIES, key="update_city_filter")
+        city_filter = st.selectbox("City", ["All"] + SUPPORTED_CITIES, key="update_city_filter")
     with col2:
-        show_count = st.slider("Show Updates", 1, 50, 10, key="update_count")
+        show_count = st.slider("Show", 1, 50, 10, key="update_count")
     
     # Apply filter
     filtered_updates = updates
@@ -925,33 +1076,15 @@ def show_update_log():
             st.info("No updates recorded yet. Click 'Check for Updates' on the Home page to scan for changes.")
 
 def show_email_alerts():
-    st.header("📧 Email Alert Subscription")
-    
-    # Page description - black text on white
-    st.markdown("""
-**📧 Email Alerts** - Get notified about regulation changes for your cities.
-
-**What you can do here:**
-- Subscribe to receive email alerts for specific cities (Dallas, Houston, Austin, San Antonio)
-- Get daily summary reports with all updates for your subscribed cities
-- Receive immediate notifications when new regulations are detected
-- Unsubscribe from cities you no longer need alerts for
-- View all your active subscriptions
-
-**How it works:**
-1. Subscribe with your email and select a city
-2. You'll receive a welcome email confirming your subscription
-3. Every day, you'll get a summary report of all updates for your cities
-4. You'll also get immediate alerts when new regulations are detected
-    """)
+    st.header("📧 Email Alerts")
+    st.caption("Subscribe by city to get email when regulations change. Daily summaries and instant alerts.")
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("Subscribe")
-        email = st.text_input("Email Address", type="default", key="subscribe_email")
-        city = st.selectbox("Select City", SUPPORTED_CITIES, key="subscribe_city")
-        
+        email = st.text_input("Email", placeholder="you@example.com", key="subscribe_email")
+        city = st.selectbox("City", SUPPORTED_CITIES, key="subscribe_city")
         if st.button("Subscribe", type="primary"):
             if email and "@" in email:
                 success = st.session_state.db.subscribe_email(email, city)
@@ -966,8 +1099,8 @@ def show_email_alerts():
     
     with col2:
         st.subheader("Unsubscribe")
-        unsubscribe_email = st.text_input("Email Address", type="default", key="unsubscribe_email")
-        unsubscribe_city = st.selectbox("Select City to Unsubscribe", SUPPORTED_CITIES, key="unsubscribe_city")
+        unsubscribe_email = st.text_input("Email", placeholder="you@example.com", key="unsubscribe_email")
+        unsubscribe_city = st.selectbox("City", SUPPORTED_CITIES, key="unsubscribe_city")
         
         if st.button("Unsubscribe", type="secondary"):
             if unsubscribe_email and "@" in unsubscribe_email:
@@ -980,9 +1113,9 @@ def show_email_alerts():
                 st.error("Please enter a valid email address.")
         
         st.markdown("---")
-        st.subheader("View Your Subscriptions")
-        view_email = st.text_input("Enter Email to View Subscriptions", type="default", key="view_email")
-        if st.button("View Subscriptions"):
+        st.subheader("View subscriptions")
+        view_email = st.text_input("Email", placeholder="you@example.com", key="view_email")
+        if st.button("View subscriptions"):
             if view_email and "@" in view_email:
                 subscriptions = st.session_state.db.get_user_subscriptions(view_email)
                 if subscriptions:
@@ -993,16 +1126,9 @@ def show_email_alerts():
                     st.info("No active subscriptions found for this email.")
         
         st.markdown("---")
-        st.subheader("📊 Daily Summary Reports")
-        st.markdown("""
-        **Daily Summary Reports:**
-        - Subscribers receive a daily email summary of all regulation updates for their subscribed cities
-        - Summaries are sent automatically every day at 9:00 AM
-        - Each summary includes all updates from the last 24 hours
-        - If no updates, you'll receive a "No Updates" confirmation email
-        """)
-        
-        if st.button("📧 Send Test Daily Summary", help="Manually trigger a daily summary for testing (sends to all subscribers)"):
+        st.subheader("Daily summaries")
+        st.caption("Subscribers get a daily email at 9:00 AM with updates for their cities.")
+        if st.button("Send test daily summary", help="Send a test summary to all subscribers"):
             with st.spinner("Sending daily summaries..."):
                 total_sent = st.session_state.email_system.send_daily_summaries_to_all_subscribers()
                 if total_sent > 0:
@@ -1012,29 +1138,14 @@ def show_email_alerts():
 
 def show_settings():
     st.header("⚙️ Settings")
+    st.caption("Load regulations from CSV, re-index the database, or run an update check.")
     
-    # Page description - black text on white
-    st.markdown("""
-**⚙️ Settings** - Manage your data and system configuration.
-
-**What you can do here:**
-- Load regulations from sources.csv file
-- Re-index all regulations in the vector database
-- Manage data sources and update system
-- Configure daily scraping schedule
-
-**How to use:**
-1. Edit `sources.csv` to add/modify regulation sources
-2. Click "Load Regulations from CSV" to import new sources
-3. Use "Re-Index All Regulations" if you need to rebuild the search index
-    """)
-    
-    st.subheader("Data Management")
+    st.subheader("Data & indexing")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("Load Regulations from CSV"):
+        if st.button("Load regulations from CSV"):
             try:
                 with st.spinner("Loading regulations from CSV..."):
                     result = st.session_state.db.load_regulations_from_csv(SOURCES_FILE)
@@ -1087,7 +1198,7 @@ def show_settings():
             except Exception as e:
                 st.error(f"Error: {str(e)}")
         
-        if st.button("🔄 Re-Index All Regulations"):
+        if st.button("Re-index all regulations"):
             """Re-index all regulations (useful if vector store was cleared)"""
             with st.spinner("Re-indexing all regulations (this may take several minutes)..."):
                 regulations = st.session_state.db.get_all_regulations()
@@ -1114,17 +1225,9 @@ def show_settings():
                 st.success(f"✅ Re-indexed {indexed} regulations!")
         
         st.markdown("---")
-        st.subheader("Daily Scraping")
-        st.info("""
-        **Daily Update Check:**
-        - Runs automatically at 9:00 AM daily
-        - Checks all regulations for updates
-        - Sends email alerts to subscribers
-        
-        To run manually, use the "Check for Updates" button on the Home page.
-        """)
-        
-        if st.button("🔄 Run Update Check Now"):
+        st.subheader("Daily scraping")
+        st.caption("Runs at 9:00 AM daily. Use the button below to run now.")
+        if st.button("Run update check now"):
             with st.spinner("Checking for updates..."):
                 updates = st.session_state.update_checker.check_for_updates()
                 if updates:
@@ -1139,27 +1242,10 @@ def show_settings():
     
     with col2:
         st.subheader("Configuration")
-        st.info("""
-        **OpenAI API Key**: Set in .env file or environment variable
-        
-        **Email Settings**: Configure SMTP in .env file for email alerts
-        
-        **Database**: SQLite database at regulations.db
-        
-        **Vector Store**: ChromaDB at ./chroma_db
-        
-        **Daily Scraper**: Run `python daily_scraper.py` to start daily updates
-        """)
+        st.caption("OpenAI key and SMTP in `.env`. Data: SQLite (regulations.db), ChromaDB (./chroma_db). Run `python daily_scraper.py` for daily updates.")
     
     st.markdown("---")
-    st.subheader("About")
-    st.markdown("""
-    **Housing Regulation Compliance Agent v1.0**
-    
-    Built for Texas housing regulations compliance.
-    
-    This tool provides informational analysis only and does not constitute legal advice.
-    """)
+    st.caption("Housing Regulation Compliance Agent · Texas housing regulations. Informational only; not legal advice.")
 
 if __name__ == "__main__":
     main()

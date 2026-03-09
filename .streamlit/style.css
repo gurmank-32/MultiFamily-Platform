@@ -1,0 +1,63 @@
+/* User-friendly styling for Intelligence Platform */
+
+/* Reduce top padding for a tighter header */
+.block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+    max-width: 900px;
+}
+
+/* Sidebar: cleaner nav */
+[data-testid="stSidebar"] .stMarkdown {
+    font-size: 0.95rem;
+}
+[data-testid="stSidebar"] hr {
+    margin: 0.75rem 0;
+    border-color: rgba(151, 166, 195, 0.25);
+}
+
+/* Main title area - subtle spacing */
+h1 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.25rem !important;
+}
+/* Subtitle / tagline */
+.subtitle-tagline {
+    color: #64748b;
+    font-size: 1.05rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Section headers */
+h2, h3 {
+    font-weight: 600;
+    margin-top: 1.25rem !important;
+}
+
+/* Chat message bubbles - slightly more breathing room */
+[data-testid="stChatMessage"] {
+    padding: 0.75rem 0;
+}
+
+/* Buttons in chat - consistent size */
+.stButton > button {
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+/* Expanders - less heavy */
+.streamlit-expanderHeader {
+    font-weight: 500;
+}
+
+/* Metrics / stats cards */
+[data-testid="stMetricValue"] {
+    font-weight: 600;
+}
+
+/* Inputs - friendly focus */
+.stTextInput > div > div > input:focus,
+.stSelectbox > div > div:focus-within {
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
