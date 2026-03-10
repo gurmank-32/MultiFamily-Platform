@@ -44,21 +44,10 @@ h2, h3 { font-weight: 600; margin-top: 1.25rem !important; }
 /* Hide sidebar completely - using top-right menu instead */
 [data-testid="stSidebar"] { display: none; }
 [data-testid="stSidebar"] + div { margin-left: 0 !important; }
-/* Sticky top bar (menu + deploy) */
-.sticky-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 10000;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid #e2e8f0;
-  padding: 0.5rem 0;
-  margin-bottom: 0.75rem;
-}
 /* Hero header: image background with title overlay */
-.hero-header { position: relative; min-height: 200px; background-size: cover; background-position: center; display: flex; align-items: center; padding: 2rem 2rem 2rem 2rem; border-radius: 10px; margin-bottom: 1.5rem; overflow: hidden; }
+.hero-header { position: relative; min-height: 200px; background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; padding: 2rem 2rem 2rem 2rem; border-radius: 10px; margin-bottom: 1.5rem; overflow: hidden; }
 .hero-overlay { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.4) 100%); border-radius: 10px; }
-.hero-content { position: relative; z-index: 1; }
+.hero-content { position: relative; z-index: 1; text-align: center; }
 .hero-header, .hero-header * { color: #ffffff !important; }
 .hero-header h1, .hero-header .hero-title, h1.hero-title { color: #ffffff !important; font-size: 2.25rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 0.35rem 0 !important; text-shadow: 0 2px 12px rgba(0,0,0,0.55); }
 .hero-subtitle { color: #e5e5e5 !important; font-size: 1.05rem; margin: 0 !important; opacity: 0.95; }
@@ -85,9 +74,100 @@ div[data-testid="stVerticalBlock"] { background-color: transparent; }
 .chat-panel-form input { flex: 1; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; }
 .chat-panel-form button { padding: 10px 16px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; }
 
+/* Alexa chat bottom-right */
+.alexa-chat-root {
+  position: fixed;
+  bottom: 32px;
+  left: 32px;
+  z-index: 10000;
+  width: 340px;
+  max-width: 92vw;
+}
+.alexa-chat-panel {
+  background: #1d4ed8; /* blue popup feel */
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.35);
+  padding: 10px 12px;
+  border: none;
+  color: #ffffff;
+}
+.alexa-chat-panel .stMarkdown, .alexa-chat-panel p, .alexa-chat-panel span, .alexa-chat-panel label {
+  color: #e5e7eb !important;
+}
+.alexa-chat-panel .stTextInput>div>div>input {
+  font-size: 13px;
+}
+.alexa-chat-icon button {
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45);
+  font-size: 14px;
+  font-weight: 600;
+}
+.alexa-chat-icon button:hover {
+  background: #1d4ed8;
+}
+.stButton button#alexa_close {
+  padding: 0 8px;
+  background: transparent;
+  color: #e5e7eb;
+}
+
 /* Centered content blocks (Home intro) */
 .centered { text-align: center; }
 .centered p { max-width: 900px; margin: 0.5rem auto; }
+
+/* Sticky header navigation */
+.fixed-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #e2e8f0;
+}
+.fixed-header-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0.5rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.fixed-header-title {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #111827;
+}
+.nav-tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+.nav-tab {
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #1f2933;
+  border: 1px solid transparent;
+}
+.nav-tab:hover {
+  background: #e5edff;
+}
+.nav-tab-active {
+  background: #111827;
+  color: #ffffff;
+}
+.header-spacer {
+  height: 56px;
+}
 </style>
 """
 
@@ -124,101 +204,44 @@ TEXAS_CITIES = ["Dallas", "Austin", "San Antonio", "Houston"]
 # Stock image: multi-family / apartments (Unsplash, free to use)
 HERO_IMAGE_URL = "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=1200"
 
-def _process_floating_chat_message():
-    """If chat_msg in query params, add user message, get reply, add to history, clear param."""
-    if "home_chat_history" not in st.session_state:
-        st.session_state.home_chat_history = []
-    chat_msg = st.query_params.get("chat_msg")
-    if not chat_msg:
-        return
-    # Streamlit already decodes query params
-    msg = str(chat_msg)
-    if not msg.strip():
-        if "chat_msg" in st.query_params:
-            del st.query_params["chat_msg"]
-        return
-    st.session_state.home_chat_history.append({"role": "user", "content": msg})
-    result = st.session_state.qa_system.answer_question_with_context(
-        msg, st.session_state.home_chat_history
-    )
-    answer = _clean_qa_answer(result.get("answer", ""))
-    st.session_state.home_chat_history.append({"role": "assistant", "content": answer})
-    if "chat_msg" in st.query_params:
-        del st.query_params["chat_msg"]
+def _ensure_chat_history():
+    """Chatbot disabled."""
+    return
 
 
 def _render_floating_chat():
-    """Floating chat widget (no JS): open via query params + GET form submit."""
-    if "home_chat_history" not in st.session_state:
-        st.session_state.home_chat_history = []
-    history = st.session_state.home_chat_history
-    messages_html = ""
-    for m in history:
-        cls = "user" if m["role"] == "user" else "assistant"
-        escaped = html.escape(m["content"]).replace("\n", "<br/>")
-        messages_html += f'<div class="chat-msg {cls}">{escaped}</div>'
-    open_state = "open" if st.query_params.get("chat_open") else ""
-    st.markdown(
-        f"""
-        <div class="chat-widget-container">
-            <a class="chat-fab" title="Open chat" href="?chat_open=1">💬</a>
-            <div class="chat-panel {open_state}">
-                <div class="chat-panel-header">Chat <a class="chat-panel-close" href="?" aria-label="Close">×</a></div>
-                <div class="chat-panel-messages">{messages_html or '<p style="color:#64748b;font-size:13px;">Ask a question about housing regulations.</p>'}</div>
-                <div class="chat-panel-form">
-                    <form method="get" action="">
-                        <input type="hidden" name="chat_open" value="1" />
-                        <input type="text" name="chat_msg" placeholder="Type your question..." autocomplete="off" />
-                        <button type="submit">Send</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """Chatbot disabled."""
+    return
 
 
 def main():
-    if "home_chat_history" not in st.session_state:
-        st.session_state.home_chat_history = []
-    _process_floating_chat_message()
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-    
-    # Sticky top bar (stays visible while scrolling): Menu + Deploy
-    st.markdown('<div class="sticky-topbar">', unsafe_allow_html=True)
-    top_col1, top_col2, top_col3 = st.columns([6, 1, 1])
-    with top_col2:
-        with st.popover("☰  Menu"):
-            st.markdown("**Go to**")
-            for p in PAGES:
-                if st.button(p, key=f"nav_{p}", use_container_width=True):
-                    st.session_state.current_page = p
-                    st.rerun()
-            st.markdown("---")
-            st.caption(LEGAL_DISCLAIMER)
-    with top_col3:
-        with st.popover("🚀 Deploy"):
-            st.markdown("**Deploy this app**")
-            st.markdown("- Easiest: Streamlit Community Cloud")
-            st.link_button("Open Streamlit Cloud", "https://streamlit.io/cloud")
-            st.markdown("---")
-            st.markdown("If deploying elsewhere, make sure your host runs:")
-            st.code("pip install -r requirements.txt\nstreamlit run app.py", language="bash")
-    st.markdown("</div>", unsafe_allow_html=True)
 
-    # Hero: full width title over image
+    # Hero at top
     hero_html = f"""
     <div class="hero-header" style="background-image: url('{HERO_IMAGE_URL}');">
         <div class="hero-overlay"></div>
         <div class="hero-content">
             <h1 class="hero-title">MULTI-FAMILY REAL ESTATE</h1>
-            <p class="hero-subtitle">Ask questions, check compliance, and stay updated on Texas housing regulations.</p>
+            <p class="hero-subtitle">Ask questions, check compliance, and stay updated on housing regulations.</p>
         </div>
     </div>
     """
     st.markdown(hero_html, unsafe_allow_html=True)
-    
+
+    # Horizontal navigation bar under the hero (tabs with emojis)
+    nav_cols = st.columns(len(PAGES))
+    current_page = st.session_state.current_page
+    for idx, page_label in enumerate(PAGES):
+        with nav_cols[idx]:
+            # Use full label (including emoji)
+            label_text = page_label
+            is_active = (current_page == page_label)
+            btn_type = "primary" if is_active else "secondary"
+            if st.button(label_text, key=f"nav_{page_label}", use_container_width=True, type=btn_type):
+                st.session_state.current_page = page_label
+                st.rerun()
+
     page = st.session_state.current_page
     
     # Route to appropriate page
@@ -259,52 +282,11 @@ def show_home():
             It helps property managers, landlords and leasing professionals stay on top of rules and check lease
             documents against current regulations.</p>
             <p><strong>Who it’s for:</strong> Property managers, landlords, leasing agents, and anyone who needs to
-            understand or comply with housing rules in Dallas, Houston, Austin, San Antonio and Texas statewide.</p>
+            understand or comply with housing rules across their portfolio.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.markdown("---")
-    st.subheader("🗺️ States")
-    st.caption("Select a state, then choose a city where available. Click Go to see links.")
-    state = st.selectbox("State", ["Select a state..."] + STATES, key="home_states_select")
-    city = None
-    if state and state == "Texas":
-        city = st.selectbox("City", ["Select a city..."] + TEXAS_CITIES, key="home_texas_city_select")
-        if city and city != "Select a city...":
-            st.info(f"**{state}** → **{city}**")
-    elif state and state != "Select a state...":
-        st.info(f"**{state}** — city options coming soon.")
-    if state and state != "Select a state...":
-        if st.button("Go", type="primary", key="states_go_btn"):
-            st.session_state.states_go_selection = (state, city if state == "Texas" else None)
-    if st.session_state.get("states_go_selection"):
-        go_state, go_city = st.session_state.states_go_selection
-        regulations = st.session_state.db.get_all_regulations()
-        location_filter = go_city if (go_state == "Texas" and go_city) else go_state
-        filtered = [
-            r for r in regulations
-            if location_filter
-            and (
-                location_filter.lower() in (r.get("source_name") or "").lower()
-                or location_filter.lower() in (r.get("category") or "").lower()
-            )
-        ]
-        if not filtered and regulations:
-            filtered = [r for r in regulations if go_state.lower() in (r.get("source_name") or "").lower() or go_state.lower() in (r.get("category") or "").lower()]
-        if not filtered:
-            filtered = regulations
-        label = f"{go_state} → {go_city}" if go_city else go_state
-        st.markdown(f"**Links for {label}**")
-        for r in filtered:
-            name = r.get("source_name") or "Link"
-            url = r.get("url") or ""
-            if url.startswith("http"):
-                st.markdown(f"- [{name}]({url})")
-            else:
-                st.markdown(f"- {name}")
-        if not filtered:
-            st.caption("No regulation links in the database yet. Load regulations from CSV in Settings.")
     st.markdown("---")
     st.subheader("What you can do")
 
@@ -504,10 +486,17 @@ def show_ip_agent_page():
     
     # File uploader
     st.markdown("---")
-    with st.expander("📎 Check a lease for compliance", expanded=False):
-        st.caption("Upload a PDF or DOCX lease. We’ll analyze it for Texas housing rules (ESA, Fair Housing, rent control, etc.) and suggest fixes. After uploading, ask \"Is this compliant?\" or \"Check this document.\"")
-    
-    uploaded_file = st.file_uploader("Attach lease (PDF or DOCX)", type=['pdf', 'docx', 'doc'], key="chat_file_upload", help="Optional. Upload to get a compliance check.")
+    row_col1, row_col2 = st.columns([1, 2])
+    with row_col1:
+        st.markdown("**📎 Check a lease for compliance**")
+    with row_col2:
+        uploaded_file = st.file_uploader(
+            " ",
+            type=['pdf', 'docx', 'doc'],
+            key="chat_file_upload",
+            label_visibility="collapsed",
+            help="Upload a PDF or DOCX lease. We’ll analyze it for housing rules and suggest fixes.",
+        )
     
     if uploaded_file is not None:
         st.success(f"**{uploaded_file.name}** attached. Ask \"Is this compliant?\" to analyze.")
@@ -811,14 +800,16 @@ def show_ip_agent_page():
 
 def show_regulation_explorer():
     st.header("📚 Regulation Explorer")
-    st.caption("Search and browse housing regulations. Use the filters below to narrow by category or city.")
+    st.caption("Search and browse housing regulations. Use the filters below to narrow by category, state, or city.")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         search_query = st.text_input("Search", placeholder="Keyword or topic...")
     with col2:
         category_filter = st.selectbox("Category", ["All"] + REGULATION_CATEGORIES)
     with col3:
+        state_filter = st.selectbox("State", ["All"] + STATES)
+    with col4:
         city_filter = st.selectbox("City", ["All"] + SUPPORTED_CITIES)
     
     # Get regulations
@@ -827,6 +818,20 @@ def show_regulation_explorer():
     # Apply filters
     if category_filter != "All":
         regulations = [r for r in regulations if category_filter in r.get('category', '')]
+    
+    if state_filter != "All":
+        regulations = [
+            r for r in regulations
+            if state_filter.lower() in (r.get('source_name') or '').lower()
+            or state_filter.lower() in (r.get('category') or '').lower()
+        ]
+    
+    if city_filter != "All":
+        regulations = [
+            r for r in regulations
+            if city_filter.lower() in (r.get('source_name') or '').lower()
+            or city_filter.lower() in (r.get('category') or '').lower()
+        ]
     
     if search_query:
         # Vector search
