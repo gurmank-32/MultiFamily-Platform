@@ -55,6 +55,8 @@ REGULATION_CATEGORIES = [
     "Rent Caps",
     "Zoning",
     "Landlord/Tenant",
+    "Renters Insurance",
+    "Pet Rules",
     "Rental Registration",
     "Housing Programs",
     "State Housing Rules",

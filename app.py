@@ -10,11 +10,17 @@ from update_checker import UpdateChecker
 from compliance_checker import ComplianceChecker
 from email_alerts import EmailAlertSystem
 from qa_system import QASystem
-from config import SUPPORTED_CITIES, REGULATION_CATEGORIES, LEGAL_DISCLAIMER, SOURCES_FILE
+from config import (
+    SUPPORTED_CITIES,
+    REGULATION_CATEGORIES,
+    LEGAL_DISCLAIMER,
+    SOURCES_FILE,
+    SMTP_EMAIL,
+)
 import time
 import os
-import html
-import urllib.parse
+
+APP_VERSION = "1.0.0"
 
 # Page configuration
 st.set_page_config(
@@ -27,30 +33,237 @@ st.set_page_config(
 # Custom CSS for dark theme with black background
 CUSTOM_CSS = """
 <style>
-/* White background for main and sidebar */
-.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { background-color: #ffffff; }
-[data-testid="stSidebar"] { background-color: #f8fafc; }
-.block-container { padding-top: 1.5rem; padding-bottom: 2rem; background-color: #ffffff; }
+/* Hide Streamlit auto-generated heading anchor / link icons (fragment # links) */
+[data-testid="stHeadingWithAnchor"],
+[data-testid="StyledLinkIconContainer"] {
+  display: none !important;
+}
+.stApp h1 a[href^="#"],
+.stApp h2 a[href^="#"],
+.stApp h3 a[href^="#"],
+.stApp h4 a[href^="#"],
+.stApp h5 a[href^="#"],
+.stApp h6 a[href^="#"],
+.stApp h1 > div > a,
+.stApp h2 > div > a,
+.stApp h3 > div > a,
+.stApp h4 > div > a,
+.stApp h5 > div > a,
+.stApp h6 > div > a {
+  display: none !important;
+}
+
+/* Page body: soft gray so white cards pop; brand accent at top */
+.stApp {
+  background-color: #f8f9fa !important;
+  border-top: 3px solid #2563eb;
+  box-sizing: border-box;
+}
+[data-testid="stAppViewContainer"], [data-testid="stHeader"] { background-color: #f8f9fa !important; }
+[data-testid="stSidebar"] { background-color: #f1f5f9; }
+.block-container { padding-top: 1.5rem; padding-bottom: 2rem; background-color: transparent; max-width: min(96rem, 100%) !important; }
+@media (max-width: 640px) {
+  .block-container { padding-left: 0.85rem !important; padding-right: 0.85rem !important; }
+}
 /* Dark text */
 h1, h2, h3, p, label, span, .stMarkdown { color: #1e293b !important; }
 h1 { font-weight: 700; letter-spacing: -0.02em; margin-bottom: 0.25rem !important; }
 .subtitle-tagline { color: #64748b !important; font-size: 1.05rem; margin-bottom: 1.5rem; }
 h2, h3 { font-weight: 600; margin-top: 1.25rem !important; }
 [data-testid="stSidebar"] hr { margin: 0.75rem 0; border-color: #e2e8f0; }
-.stButton > button { border-radius: 8px; font-weight: 500; }
+/* ----- Global clickable widgets: inactive / hover / active (primary #2563EB) ----- */
+.stButton > button[data-testid="baseButton-secondary"],
+[data-testid="stDownloadButton"] button[data-testid="baseButton-secondary"],
+[data-testid="stFormSubmitButton"] button[data-testid="baseButton-secondary"],
+[data-testid="stPopover"] > button {
+  background-color: #E8EAF0 !important;
+  color: #333333 !important;
+  border: 1px solid #D0D3DC !important;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.10) !important;
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+  font-weight: 500;
+}
+.stButton > button[data-testid="baseButton-secondary"]:hover:not(:disabled),
+[data-testid="stDownloadButton"] button[data-testid="baseButton-secondary"]:hover:not(:disabled),
+[data-testid="stFormSubmitButton"] button[data-testid="baseButton-secondary"]:hover:not(:disabled),
+[data-testid="stPopover"] > button:hover:not(:disabled):not([aria-expanded="true"]) {
+  background-color: #D8DCE8 !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+  transform: translateY(-1px) !important;
+  cursor: pointer !important;
+}
+.stButton > button[data-testid="baseButton-primary"],
+[data-testid="stDownloadButton"] button[data-testid="baseButton-primary"],
+[data-testid="stFormSubmitButton"] button[data-testid="baseButton-primary"] {
+  background-color: #2563EB !important;
+  color: white !important;
+  border: none !important;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.15) !important;
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+  font-weight: 500;
+}
+.stButton > button[data-testid="baseButton-primary"]:hover:not(:disabled),
+[data-testid="stDownloadButton"] button[data-testid="baseButton-primary"]:hover:not(:disabled),
+[data-testid="stFormSubmitButton"] button[data-testid="baseButton-primary"]:hover:not(:disabled) {
+  background-color: #2563EB !important;
+  color: white !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+  transform: translateY(-1px) !important;
+  cursor: pointer !important;
+}
+[data-testid="stPopover"] > button[aria-expanded="true"] {
+  background-color: #2563EB !important;
+  color: white !important;
+  border: none !important;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.15) !important;
+  border-radius: 8px !important;
+}
+[data-testid="stPopover"] > button[aria-expanded="true"]:hover:not(:disabled) {
+  background-color: #2563EB !important;
+  color: white !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+  transform: translateY(-1px) !important;
+  cursor: pointer !important;
+}
+.stButton > button:disabled,
+[data-testid="stDownloadButton"] button:disabled,
+[data-testid="stPopover"] > button:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+/* Select / multiselect / date input (Base Web) */
+[data-testid="stSelectbox"] [data-baseweb="select"],
+[data-testid="stMultiSelect"] [data-baseweb="select"],
+[data-testid="stDateInput"] [data-baseweb="select"] {
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+}
+[data-testid="stSelectbox"] [data-baseweb="select"] > div,
+[data-testid="stMultiSelect"] [data-baseweb="select"] > div,
+[data-testid="stDateInput"] [data-baseweb="select"] > div {
+  background-color: #E8EAF0 !important;
+  color: #333333 !important;
+  border: 1px solid #D0D3DC !important;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.10) !important;
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+}
+[data-testid="stSelectbox"] [data-baseweb="select"]:hover,
+[data-testid="stMultiSelect"] [data-baseweb="select"]:hover,
+[data-testid="stDateInput"] [data-baseweb="select"]:hover {
+  transform: translateY(-1px);
+  cursor: pointer !important;
+}
+[data-testid="stSelectbox"] [data-baseweb="select"]:hover > div,
+[data-testid="stMultiSelect"] [data-baseweb="select"]:hover > div,
+[data-testid="stDateInput"] [data-baseweb="select"]:hover > div {
+  background-color: #D8DCE8 !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+}
+/* File upload dropzone */
+[data-testid="stFileUploaderDropzone"],
+[data-testid="stFileUploader"] > section {
+  background-color: #E8EAF0 !important;
+  border: 1px solid #D0D3DC !important;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.10) !important;
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+}
+[data-testid="stFileUploaderDropzone"]:hover,
+[data-testid="stFileUploader"] > section:hover {
+  background-color: #D8DCE8 !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+  transform: translateY(-1px);
+  cursor: pointer !important;
+}
+/* Expanders (closed = inactive; open = active blue) */
+[data-testid="stExpander"] details > summary {
+  background-color: #E8EAF0 !important;
+  color: #333333 !important;
+  border: 1px solid #D0D3DC !important;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.10) !important;
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+}
+[data-testid="stExpander"] details > summary:hover {
+  background-color: #D8DCE8 !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+  transform: translateY(-1px);
+  cursor: pointer !important;
+}
+[data-testid="stExpander"] details[open] > summary {
+  background-color: #2563EB !important;
+  color: white !important;
+  border: none !important;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.15) !important;
+  border-radius: 8px !important;
+}
+[data-testid="stExpander"] details[open] > summary:hover {
+  background-color: #2563EB !important;
+  color: white !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+  transform: translateY(-1px);
+  cursor: pointer !important;
+}
+/* Slider thumb */
+[data-testid="stSlider"] [role="slider"] {
+  background-color: #2563EB !important;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.15) !important;
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+}
+[data-testid="stSlider"] [role="slider"]:hover {
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+  transform: translateY(-1px);
+  cursor: pointer !important;
+}
+/* Base Web menus (open dropdown / options) */
+[data-baseweb="menu"] li:not([aria-disabled="true"]):hover,
+[data-baseweb="popover"] ul[role="listbox"] li:hover,
+[data-baseweb="popover"] [role="option"]:hover {
+  background-color: #D8DCE8 !important;
+  cursor: pointer !important;
+}
 [data-testid="stMetricValue"] { font-weight: 600; color: #1e293b !important; }
 [data-testid="stMetricLabel"] { color: #64748b !important; }
 .section-help { color: #64748b !important; font-size: 0.9rem; margin-bottom: 1rem; }
 /* Hide sidebar completely - using top-right menu instead */
 [data-testid="stSidebar"] { display: none; }
 [data-testid="stSidebar"] + div { margin-left: 0 !important; }
-/* Hero header: image background with title overlay */
-.hero-header { position: relative; min-height: 200px; background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; padding: 2rem 2rem 2rem 2rem; border-radius: 10px; margin-bottom: 1.5rem; overflow: hidden; }
-.hero-overlay { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.4) 100%); border-radius: 10px; }
-.hero-content { position: relative; z-index: 1; text-align: center; }
+/* Hero: full-width image; CTAs overlap bottom (visually inside hero) */
+.home-hero-stack {
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 0 0 0 0;
+}
+.home-hero-stack .hero-header {
+  margin-bottom: 0 !important;
+  border-radius: 12px;
+  min-height: 340px;
+  padding: 2.5rem 1.5rem 6.25rem 1.5rem;
+}
+.hero-header { position: relative; min-height: 300px; background-size: cover; background-position: center 35%; display: flex; align-items: center; justify-content: center; padding: 2.5rem 1.5rem 2rem 1.5rem; border-radius: 12px; margin-bottom: 0.75rem; overflow: hidden; }
+.hero-overlay { position: absolute; inset: 0; background: linear-gradient(120deg, rgba(15,23,42,0.82) 0%, rgba(15,23,42,0.55) 45%, rgba(15,23,42,0.35) 100%); border-radius: 12px; }
+.hero-content { position: relative; z-index: 1; text-align: center; max-width: 44rem; margin: 0 auto; padding: 0 0.5rem; }
 .hero-header, .hero-header * { color: #ffffff !important; }
-.hero-header h1, .hero-header .hero-title, h1.hero-title { color: #ffffff !important; font-size: 2.25rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 0.35rem 0 !important; text-shadow: 0 2px 12px rgba(0,0,0,0.55); }
-.hero-subtitle { color: #e5e5e5 !important; font-size: 1.05rem; margin: 0 !important; opacity: 0.95; }
+.hero-header h1, .hero-header .hero-title, h1.hero-title { color: #ffffff !important; font-size: 2.35rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 0.5rem 0 !important; text-shadow: 0 2px 16px rgba(0,0,0,0.65), 0 1px 3px rgba(0,0,0,0.5); }
+.hero-subtitle { color: #f1f5f9 !important; font-size: 1.28rem !important; line-height: 1.55 !important; margin: 0 !important; opacity: 1 !important; font-weight: 500 !important;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.9), 0 1px 28px rgba(0,0,0,0.65), 0 0 2px rgba(0,0,0,0.8) !important; }
+.hero-cta-block {
+  margin: -5.5rem auto 1rem auto;
+  max-width: 720px;
+  position: relative;
+  z-index: 4;
+  padding: 0 0.75rem 0.35rem 0.75rem;
+}
+.hero-cta-block .stButton > button { border-radius: 8px !important; font-weight: 600 !important; padding: 0.55rem 1.35rem !important; }
+@media (max-width: 640px) {
+  .home-hero-stack .hero-header { min-height: 300px; padding-bottom: 5.5rem; }
+  .hero-cta-block { margin-top: -5rem !important; }
+}
 /* Cards and expanders */
 [data-testid="stExpander"], .element-container { background-color: transparent; }
 /* Dataframes and inputs */
@@ -59,8 +272,8 @@ div[data-testid="stVerticalBlock"] { background-color: transparent; }
 /* Floating chat button and panel */
 .chat-widget-container { position: fixed; bottom: 24px; right: 24px; z-index: 9998; pointer-events: none; }
 .chat-widget-container * { pointer-events: auto; }
-.chat-fab { position: absolute; bottom: 0; right: 0; width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: white; border: none; cursor: pointer; box-shadow: 0 4px 14px rgba(37,99,235,0.45); font-size: 24px; display: flex; align-items: center; justify-content: center; text-decoration: none; }
-.chat-fab:hover { background: #1d4ed8; }
+.chat-fab { position: absolute; bottom: 0; right: 0; width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: white; border: none; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.15); font-size: 24px; display: flex; align-items: center; justify-content: center; text-decoration: none; transition: all 0.2s ease; }
+.chat-fab:hover { background: #2563eb; box-shadow: 0 4px 10px rgba(0,0,0,0.15); transform: translateY(-1px); cursor: pointer; }
 .chat-panel { position: absolute; bottom: 70px; right: 0; z-index: 9999; width: 380px; max-width: calc(100vw - 48px); height: 500px; background: #fff; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); display: none; flex-direction: column; overflow: hidden; }
 .chat-panel.open { display: flex; }
 .chat-panel-header { padding: 14px 16px; background: #2563eb; color: white; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
@@ -72,7 +285,8 @@ div[data-testid="stVerticalBlock"] { background-color: transparent; }
 .chat-panel-form { padding: 12px; border-top: 1px solid #e2e8f0; background: #fff; }
 .chat-panel-form form { display: flex; gap: 8px; }
 .chat-panel-form input { flex: 1; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; }
-.chat-panel-form button { padding: 10px 16px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; }
+.chat-panel-form button { padding: 10px 16px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; box-shadow: 0 2px 5px rgba(0,0,0,0.15); transition: all 0.2s ease; }
+.chat-panel-form button:hover { background: #2563eb; box-shadow: 0 4px 10px rgba(0,0,0,0.15); transform: translateY(-1px); cursor: pointer; }
 
 /* Alexa chat bottom-right */
 .alexa-chat-root {
@@ -103,12 +317,16 @@ div[data-testid="stVerticalBlock"] { background-color: transparent; }
   background: #2563eb;
   color: #ffffff;
   border: none;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.15);
   font-size: 14px;
   font-weight: 600;
+  transition: all 0.2s ease !important;
 }
 .alexa-chat-icon button:hover {
-  background: #1d4ed8;
+  background: #2563eb !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+  transform: translateY(-1px) !important;
+  cursor: pointer !important;
 }
 .stButton button#alexa_close {
   padding: 0 8px;
@@ -116,9 +334,209 @@ div[data-testid="stVerticalBlock"] { background-color: transparent; }
   color: #e5e7eb;
 }
 
-/* Centered content blocks (Home intro) */
-.centered { text-align: center; }
-.centered p { max-width: 900px; margin: 0.5rem auto; }
+/* Nav row below hero */
+div[data-testid="stHorizontalBlock"]:has(.nav-primary-anchor) {
+  margin-bottom: 0.35rem !important;
+}
+/* Home main: use full card width */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.home-main-wide),
+div.stVerticalBlockBorderWrapper:has(.home-main-wide) {
+  padding: 1.35rem 1.35rem 1.5rem 1.35rem !important;
+}
+.home-page-start { margin-top: 0; }
+.home-intro {
+  max-width: 100%;
+  width: 100%;
+  margin: 0 0 1.25rem 0;
+  text-align: left;
+}
+.home-intro-title {
+  margin: 0 0 0.65rem 0 !important;
+  color: #0f172a !important;
+  font-size: 1.75rem !important;
+  font-weight: 700 !important;
+  text-align: left !important;
+  max-width: 100%;
+}
+.home-intro-body {
+  max-width: 100%;
+  margin: 0;
+  text-align: left;
+}
+/* Built for + chips: one horizontal line */
+[data-testid="stMarkdownContainer"] .home-audience-row {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+}
+.home-intro-body p {
+  color: #334155 !important;
+  line-height: 1.65 !important;
+  font-size: 1rem !important;
+  margin: 0.55rem 0 0 0 !important;
+}
+.home-audience-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-top: 1.1rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.2rem;
+}
+.home-audience-label {
+  display: inline-block;
+  font-size: 0.7rem !important;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #64748b !important;
+  margin: 0 !important;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.home-audience-chips {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  margin: 0 !important;
+  flex: 0 1 auto;
+  min-width: 0;
+  width: max-content;
+  max-width: none;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.audience-chip {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500;
+  line-height: 1.2 !important;
+  color: #334155 !important;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 0.42rem 0.85rem;
+  min-height: 2rem;
+  box-sizing: border-box;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+.home-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0 1rem 0.85rem 1rem;
+  padding-top: 0;
+  background: #ffffff;
+  text-align: left;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  border-top: 4px solid #cbd5e1;
+  overflow: hidden;
+}
+.home-card--compliance { border-top-color: #2563eb; }
+.home-card--explore { border-top-color: #059669; }
+.home-card--alerts { border-top-color: #d97706; }
+.home-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.85rem 0 0.45rem 0;
+}
+.home-card-chip {
+  flex-shrink: 0;
+  width: 2.4rem;
+  height: 2.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.home-card--compliance .home-card-chip { background: #eff6ff; }
+.home-card--explore .home-card-chip { background: #ecfdf5; }
+.home-card--alerts .home-card-chip { background: #fffbeb; }
+.home-card h4 {
+  margin: 0 !important;
+  font-size: 1.08rem !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  letter-spacing: -0.02em;
+}
+.home-card p.home-card-desc {
+  margin: 0 0 0 0 !important;
+  font-size: 0.9rem !important;
+  color: #64748b !important;
+  line-height: 1.55 !important;
+}
+.home-section-title { font-size: 1.15rem !important; font-weight: 600 !important; color: #0f172a !important; margin: 1.25rem 0 0.75rem 0 !important; }
+.home-quicksteps-wrap { max-width: 100%; margin: 0 0 1.25rem 0; }
+.home-quicksteps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem 0.35rem;
+  padding: 1rem 1.1rem;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+.home-quicksteps .step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 500;
+  color: #1e293b !important;
+  font-size: 0.95rem !important;
+}
+.home-quicksteps .step-arrow { color: #94a3b8; padding: 0 0.15rem; font-weight: 600; }
+.home-trust { margin: 0 0 1.25rem 0; max-width: 100%; }
+.home-trust-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  font-size: 0.92rem !important;
+  color: #334155 !important;
+}
+.home-trust-stats .trust-sep { color: #cbd5e1; user-select: none; }
+.home-trust-note { font-size: 0.78rem !important; color: #64748b !important; margin-top: 0.4rem !important; }
+.app-footer {
+  margin-top: 2rem;
+  padding: 1.35rem 1rem 2rem 1rem;
+  background: #0f172a;
+  border-top: none;
+  border-radius: 12px 12px 0 0;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #94a3b8 !important;
+}
+.app-footer .footer-item { color: #94a3b8 !important; font-weight: 500; }
+.app-footer .footer-sep { margin: 0 0.5rem; color: #475569; }
+@media (max-width: 480px) {
+  .home-quicksteps { flex-direction: column; align-items: flex-start; }
+  .home-quicksteps .step-arrow { display: none; }
+}
 
 /* Sticky header navigation */
 .fixed-header {
@@ -168,6 +586,137 @@ div[data-testid="stVerticalBlock"] { background-color: transparent; }
 .header-spacer {
   height: 56px;
 }
+
+/* Main layout: white content cards (Streamlit bordered containers) */
+[data-testid="stVerticalBlockBorderWrapper"],
+div.stVerticalBlockBorderWrapper {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  padding: 1rem 1.15rem 1.15rem 1.15rem !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+  margin-bottom: 1rem !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stWidgetLabel"] p,
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stWidgetLabel"] label,
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stWidgetLabel"] span,
+div.stVerticalBlockBorderWrapper [data-testid="stWidgetLabel"] p,
+div.stVerticalBlockBorderWrapper [data-testid="stWidgetLabel"] label,
+div.stVerticalBlockBorderWrapper [data-testid="stWidgetLabel"] span {
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  color: #0f172a !important;
+}
+/* Light-blue page hero (subpages) */
+.page-hero-bar {
+  background: linear-gradient(180deg, #eff6ff 0%, #e8f0fe 100%);
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 1.1rem 1.25rem 1.2rem 1.25rem;
+  margin: 0 0 1rem 0;
+}
+.page-hero-title {
+  margin: 0 !important;
+  padding: 0 0 0 0.85rem !important;
+  border-left: 4px solid #2563eb;
+  font-size: 1.5rem !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  line-height: 1.25 !important;
+  letter-spacing: -0.02em !important;
+}
+.page-hero-sub {
+  margin: 0.5rem 0 0 0 !important;
+  padding-left: calc(0.85rem + 4px) !important;
+  font-size: 1.02rem !important;
+  line-height: 1.5 !important;
+  color: #334155 !important;
+}
+
+/* ----- App navigation (Streamlit buttons + SVG row; no <a href> — same-page only) ----- */
+.nav-icon-cell { text-align: center; color: #475569; margin-bottom: 0.1rem; }
+.nav-icon-cell svg { vertical-align: middle; }
+/* One nav row: pills + More share baseline */
+.nav-primary-anchor ~ div [data-testid="stHorizontalBlock"],
+[data-testid="stVerticalBlockBorderWrapper"]:has(.nav-primary-anchor) [data-testid="stHorizontalBlock"] {
+  align-items: center !important;
+}
+/* Nav tab buttons — sizing only (colors from global clickable rules) */
+.nav-primary-anchor ~ div [data-testid="stHorizontalBlock"] .stButton > button,
+[data-testid="stVerticalBlockBorderWrapper"]:has(.nav-primary-anchor) [data-testid="stHorizontalBlock"] .stButton > button {
+  border-radius: 8px !important;
+  font-size: 0.88rem !important;
+  font-weight: 500 !important;
+  line-height: 1.2 !important;
+  min-height: 2.35rem !important;
+  box-sizing: border-box !important;
+}
+.nav-primary-anchor ~ div [data-testid="stHorizontalBlock"] .stButton > button[data-testid="baseButton-secondary"],
+[data-testid="stVerticalBlockBorderWrapper"]:has(.nav-primary-anchor) [data-testid="stHorizontalBlock"] .stButton > button[data-testid="baseButton-secondary"],
+.nav-primary-anchor ~ div [data-testid="stHorizontalBlock"] .stButton > button[data-testid="baseButton-primary"],
+[data-testid="stVerticalBlockBorderWrapper"]:has(.nav-primary-anchor) [data-testid="stHorizontalBlock"] .stButton > button[data-testid="baseButton-primary"] {
+  padding: 0.48rem 1.05rem !important;
+}
+/* More popover: layout only (trigger uses global secondary / expanded primary) */
+.nav-primary-anchor ~ div [data-testid="stHorizontalBlock"] div[data-testid="stPopover"],
+[data-testid="stVerticalBlockBorderWrapper"]:has(.nav-primary-anchor) [data-testid="stHorizontalBlock"] div[data-testid="stPopover"] {
+  width: 100% !important;
+}
+.nav-primary-anchor ~ div [data-testid="stHorizontalBlock"] div[data-testid="stPopover"] > button,
+[data-testid="stVerticalBlockBorderWrapper"]:has(.nav-primary-anchor) [data-testid="stHorizontalBlock"] div[data-testid="stPopover"] > button {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: center !important;
+  white-space: nowrap !important;
+  width: 100% !important;
+  font-size: 0.88rem !important;
+  line-height: 1.2 !important;
+  min-height: 2.35rem !important;
+  height: auto !important;
+  padding: 0.48rem 1.05rem !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  gap: 0.35rem !important;
+}
+.nav-primary-anchor ~ div [data-testid="stHorizontalBlock"] div[data-testid="stPopover"] > button > div,
+[data-testid="stVerticalBlockBorderWrapper"]:has(.nav-primary-anchor) [data-testid="stHorizontalBlock"] div[data-testid="stPopover"] > button > div {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.35rem !important;
+  white-space: nowrap !important;
+  width: 100% !important;
+  min-height: 100% !important;
+}
+.nav-primary-anchor ~ div [data-testid="stHorizontalBlock"] div[data-testid="stPopover"] > button svg,
+[data-testid="stVerticalBlockBorderWrapper"]:has(.nav-primary-anchor) [data-testid="stHorizontalBlock"] div[data-testid="stPopover"] > button svg {
+  width: 0.95em !important;
+  height: 0.95em !important;
+  flex-shrink: 0 !important;
+}
+@media (max-width: 640px) {
+  .nav-icon-cell svg { width: 16px !important; height: 16px !important; }
+  .nav-primary-anchor ~ div [data-testid="stHorizontalBlock"] .stButton > button,
+  [data-testid="stVerticalBlockBorderWrapper"]:has(.nav-primary-anchor) [data-testid="stHorizontalBlock"] .stButton > button {
+    font-size: 0.78rem !important;
+    padding-left: 0.4rem !important;
+    padding-right: 0.4rem !important;
+    min-height: 2.15rem !important;
+    height: auto !important;
+  }
+  .nav-primary-anchor ~ div [data-testid="stHorizontalBlock"] div[data-testid="stPopover"] > button,
+  [data-testid="stVerticalBlockBorderWrapper"]:has(.nav-primary-anchor) [data-testid="stHorizontalBlock"] div[data-testid="stPopover"] > button {
+    font-size: 0.78rem !important;
+    padding-left: 0.4rem !important;
+    padding-right: 0.4rem !important;
+    min-height: 2.15rem !important;
+    height: auto !important;
+  }
+}
 </style>
 """
 
@@ -189,20 +738,56 @@ if 'qa_system' not in st.session_state:
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "🏠 Home"
 
-PAGES = [
-    "🏠 Home",
-    "💬 Agent",
-    "📚 Regulation Explorer",
-    "📢 Update Log",
-    "📧 Email Alerts",
-    "⚙️ Settings",
+# Canonical page keys (routing). Primary nav shows first five; Settings is under "More".
+PAGE_HOME = "🏠 Home"
+PAGE_AGENT = "💬 Agent"
+PAGE_EXPLORER = "📚 Regulation Explorer"
+PAGE_UPDATES = "📢 Update Log"
+PAGE_EMAIL = "📧 Email Alerts"
+PAGE_SETTINGS = "⚙️ Settings"
+
+# Per-page hero (light blue bar) — title + subtitle for all routes except Home (image hero).
+PAGE_HERO_COPY = {
+    PAGE_AGENT: (
+        "💬 Agent",
+        "Ask about housing regulations, upload a lease for compliance checks, and review sources in the conversation.",
+    ),
+    PAGE_EXPLORER: (
+        "📚 Regulation Explorer",
+        "Search and browse indexed sources. Use filters below to narrow by category, state, or city.",
+    ),
+    PAGE_UPDATES: (
+        "📢 Update Log",
+        'See when regulations changed. Use "Check for updates" to scan for new changes.',
+    ),
+    PAGE_EMAIL: (
+        "📧 Email Alerts",
+        "Subscribe by city to get email when regulations change. Daily summaries and instant alerts.",
+    ),
+    PAGE_SETTINGS: (
+        "⚙️ Settings",
+        "Load regulations from CSV, re-index the database, or run an update check.",
+    ),
+}
+
+# (route key, slug for widget keys, button label with emoji)
+NAV_PRIMARY = [
+    (PAGE_HOME, "home", "🏠 Home"),
+    (PAGE_AGENT, "agent", "💬 Agent"),
+    (PAGE_EXPLORER, "explorer", "📚 Explorer"),
+    (PAGE_UPDATES, "updates", "📢 Updates"),
+    (PAGE_EMAIL, "email", "✉️ Email"),
 ]
+
 
 STATES = ["Texas", "California", "Indiana"]
 TEXAS_CITIES = ["Dallas", "Austin", "San Antonio", "Houston"]
 
-# Stock image: multi-family / apartments (Unsplash, free to use)
-HERO_IMAGE_URL = "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=1200"
+# Hero: modern city skyline / premium residential feel (Unsplash)
+HERO_IMAGE_URL = (
+    "https://images.unsplash.com/photo-1514565131-fce0801e5785"
+    "?auto=format&fit=crop&w=2000&q=85"
+)
 
 def _ensure_chat_history():
     """Chatbot disabled."""
@@ -214,49 +799,100 @@ def _render_floating_chat():
     return
 
 
+def _render_subpage_hero(page_key: str):
+    meta = PAGE_HERO_COPY.get(page_key)
+    if not meta:
+        return
+    title, subtitle = meta
+    st.markdown(
+        f"""
+        <div class="page-hero-bar">
+            <h1 class="page-hero-title">{title}</h1>
+            <p class="page-hero-sub">{subtitle}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main():
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-    # Hero at top
-    hero_html = f"""
-    <div class="hero-header" style="background-image: url('{HERO_IMAGE_URL}');">
-        <div class="hero-overlay"></div>
-        <div class="hero-content">
-            <h1 class="hero-title">MULTI-FAMILY REAL ESTATE</h1>
-            <p class="hero-subtitle">Ask questions, check compliance, and stay updated on housing regulations.</p>
-        </div>
-    </div>
-    """
-    st.markdown(hero_html, unsafe_allow_html=True)
-
-    # Horizontal navigation bar under the hero (tabs with emojis)
-    nav_cols = st.columns(len(PAGES))
     current_page = st.session_state.current_page
-    for idx, page_label in enumerate(PAGES):
-        with nav_cols[idx]:
-            # Use full label (including emoji)
-            label_text = page_label
-            is_active = (current_page == page_label)
-            btn_type = "primary" if is_active else "secondary"
-            if st.button(label_text, key=f"nav_{page_label}", use_container_width=True, type=btn_type):
-                st.session_state.current_page = page_label
-                st.rerun()
+    page = current_page
 
-    page = st.session_state.current_page
-    
-    # Route to appropriate page
-    if page == "🏠 Home":
-        show_home()
-    elif page == "💬 Agent":
-        show_ip_agent_page()
-    elif page == "📚 Regulation Explorer":
-        show_regulation_explorer()
-    elif page == "📢 Update Log":
-        show_update_log()
-    elif page == "📧 Email Alerts":
-        show_email_alerts()
-    elif page == "⚙️ Settings":
-        show_settings()
+    # 1) Hero first: home = image + title + CTAs overlapping bottom; other pages = title bar
+    if page == PAGE_HOME:
+        hero_html = f"""
+        <div class="home-hero-stack">
+            <div class="hero-header" style="background-image: url('{HERO_IMAGE_URL}');">
+                <div class="hero-overlay"></div>
+                <div class="hero-content">
+                    <h1 class="hero-title">MULTI-FAMILY REAL ESTATE</h1>
+                    <p class="hero-subtitle">Ask questions, check compliance, and stay updated on housing regulations—across your portfolio.</p>
+                </div>
+            </div>
+        </div>
+        """
+        st.markdown(hero_html, unsafe_allow_html=True)
+        st.markdown('<div class="hero-cta-block">', unsafe_allow_html=True)
+        _sp, hc_a, hc_b, _sp2 = st.columns([1, 2, 2, 1])
+        with hc_a:
+            if st.button("Ask the Agent", key="hero_cta_agent", use_container_width=True, type="primary"):
+                st.session_state.current_page = PAGE_AGENT
+                st.rerun()
+        with hc_b:
+            if st.button("Get Started", key="hero_cta_start", use_container_width=True):
+                st.session_state.current_page = PAGE_EXPLORER
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        _render_subpage_hero(page)
+
+    # 2) Navigation below hero — one row: five pills + More (same vertical alignment)
+    with st.container(border=True):
+        st.markdown('<div class="nav-primary-anchor"></div>', unsafe_allow_html=True)
+        c1, c2, c3, c4, c5, c6 = st.columns([1, 1, 1, 1, 1, 0.72])
+        nav_cols = (c1, c2, c3, c4, c5)
+        for i, (page_key, slug, nav_label) in enumerate(NAV_PRIMARY):
+            with nav_cols[i]:
+                is_active = current_page == page_key
+                if st.button(
+                    nav_label,
+                    key=f"nav_btn_{slug}",
+                    type="primary" if is_active else "secondary",
+                    use_container_width=True,
+                ):
+                    st.session_state.current_page = page_key
+                    st.rerun()
+        with c6:
+            # NBSP keeps emoji + "More" on one line (matches 🏠 Home style)
+            with st.popover("⚙️\u00a0More"):
+                if st.button(
+                    "⚙️ Settings",
+                    key="nav_btn_settings",
+                    use_container_width=True,
+                    type="primary" if current_page == PAGE_SETTINGS else "secondary",
+                ):
+                    st.session_state.current_page = PAGE_SETTINGS
+                    st.rerun()
+
+    # 3) Page content
+    with st.container(border=True):
+        if page == PAGE_HOME:
+            show_home()
+        elif page == PAGE_AGENT:
+            show_ip_agent_page()
+        elif page == PAGE_EXPLORER:
+            show_regulation_explorer()
+        elif page == PAGE_UPDATES:
+            show_update_log()
+        elif page == PAGE_EMAIL:
+            show_email_alerts()
+        elif page == PAGE_SETTINGS:
+            show_settings()
+
+    _render_app_footer()
     _render_floating_chat()
 
 def _clean_qa_answer(text):
@@ -272,69 +908,132 @@ def _clean_qa_answer(text):
     return text
 
 def show_home():
-    """Front page: project description, states, and chatbot."""
-    st.markdown("---")
+    """Front page: co-pilot intro, feature cards, quick start, trust stats, metrics, actions."""
+    st.markdown(
+        '<span class="home-main-wide" aria-hidden="true"></span>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         """
-        <div class="centered">
-            <h3>What is this platform?</h3>
-            <p><strong>Multi-Family Real Estate</strong> is an AI-powered assistant for housing regulation compliance.
-            It helps property managers, landlords and leasing professionals stay on top of rules and check lease
-            documents against current regulations.</p>
-            <p><strong>Who it’s for:</strong> Property managers, landlords, leasing agents, and anyone who needs to
-            understand or comply with housing rules across their portfolio.</p>
+        <div class="home-intro home-page-start">
+            <h2 class="home-intro-title">Your AI Compliance Co-Pilot</h2>
+            <div class="home-intro-body">
+                <p><strong>Multi-Family Real Estate</strong> helps you stay ahead of housing rules—without digging through
+                dense legal sites alone. Upload leases for a structured compliance readout, explore your indexed
+                regulations, and get notified when something changes.</p>
+                <div class="home-audience-row">
+                    <span class="home-audience-label">Built for</span>
+                    <div class="home-audience-chips"><span class="audience-chip">🏢 Property Managers</span><span class="audience-chip">👤 Landlords</span><span class="audience-chip">📋 Leasing Teams</span></div>
+                </div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    fc1, fc2, fc3 = st.columns(3)
+    with fc1:
+        st.markdown(
+            """
+            <div class="home-card home-card--compliance">
+                <div class="home-card-head">
+                    <span class="home-card-chip" aria-hidden="true">✅</span>
+                    <h4>Check Compliance</h4>
+                </div>
+                <p class="home-card-desc">Upload a PDF or DOCX lease and ask if it meets key housing requirements—with plain-language fixes.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button("Go to Agent", key="home_fc_agent", use_container_width=True):
+            st.session_state.current_page = PAGE_AGENT
+            st.rerun()
+    with fc2:
+        st.markdown(
+            """
+            <div class="home-card home-card--explore">
+                <div class="home-card-head">
+                    <span class="home-card-chip" aria-hidden="true">📋</span>
+                    <h4>Explore Regulations</h4>
+                </div>
+                <p class="home-card-desc">Search and filter the regulation library by category, state, or city and jump to official sources.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button("Go to Explorer", key="home_fc_explorer", use_container_width=True):
+            st.session_state.current_page = PAGE_EXPLORER
+            st.rerun()
+    with fc3:
+        st.markdown(
+            """
+            <div class="home-card home-card--alerts">
+                <div class="home-card-head">
+                    <span class="home-card-chip" aria-hidden="true">🔔</span>
+                    <h4>Get Alerts</h4>
+                </div>
+                <p class="home-card-desc">Subscribe by city for email when rules change so your portfolio isn’t caught off guard.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button("Go to Email Alerts", key="home_fc_alerts", use_container_width=True):
+            st.session_state.current_page = PAGE_EMAIL
+            st.rerun()
+
+    st.markdown(
+        """
+        <h3 class="home-section-title">Quick Start</h3>
+        <div class="home-quicksteps-wrap">
+            <div class="home-quicksteps">
+                <span class="step"><span class="step-num">1️⃣</span> Upload your lease</span>
+                <span class="step-arrow">→</span>
+                <span class="step"><span class="step-num">2️⃣</span> Ask the Agent</span>
+                <span class="step-arrow">→</span>
+                <span class="step"><span class="step-num">3️⃣</span> Get compliance report</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="home-trust">
+            <h3 class="home-section-title">🚀 Trust &amp; Credibility</h3>
+            <div class="home-trust-stats">
+                <span>📊 500+ Regulations Tracked</span>
+                <span class="trust-sep">|</span>
+                <span>🏙️ 10 States Covered</span>
+                <span class="trust-sep">|</span>
+                <span>⚡ Instant AI Answers</span>
+            </div>
+            <p class="home-trust-note">Illustrative benchmarks for demonstration; live database counts appear below.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.markdown("---")
-    st.subheader("What you can do")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("""
-        **💬 Agent**  
-        Ask questions in plain English. Get answers about ESA, rent control, Fair Housing, and other  
-        Texas housing regulations, with sources.
-
-        **📚 Regulation Explorer**  
-        Search and browse all regulations in the database. Filter by category or city and open  
-        official source links.
-
-        **📢 Update Log**  
-        See when regulations changed. Run a check to detect new updates and review summaries.
-        """)
-    with col2:
-        st.markdown("""
-        **📧 Email Alerts**  
-        Subscribe by city and get email when regulations change—daily summaries and instant alerts.
-
-        **📎 Compliance check**  
-        Upload a lease (PDF or DOCX) and ask “Is this compliant?” to get an analysis and suggested fixes.
-
-        **⚙️ Settings**  
-        Load regulations from CSV, re-index the database, and run manual update checks.
-        """)
-
-    st.markdown("---")
-    st.subheader("At a glance")
+    st.subheader("At a glance", anchor=False)
     regulations = st.session_state.db.get_all_regulations()
     updates = st.session_state.db.get_recent_updates(limit=1000)
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
+    m1, m2 = st.columns(2)
+    with m1:
         st.metric("Regulations in database", len(regulations))
-    with col2:
+    with m2:
         st.metric("Updates tracked", len(updates))
-    with col3:
+    m3, m4 = st.columns(2)
+    with m3:
         st.metric("Cities supported", len(SUPPORTED_CITIES))
-    with col4:
+    with m4:
         st.metric("Categories", len(REGULATION_CATEGORIES))
 
     st.markdown("---")
-    st.subheader("Quick actions")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Check for updates now", use_container_width=True):
+    st.subheader("Quick actions", anchor=False)
+    qa1, qa2 = st.columns(2)
+    with qa1:
+        if st.button("Check for updates now", use_container_width=True, key="home_check_updates"):
             with st.spinner("Checking for regulation updates..."):
                 new_updates = st.session_state.update_checker.check_for_updates()
                 if new_updates:
@@ -343,13 +1042,31 @@ def show_home():
                     st.success(f"Found {len(new_updates)} new update(s). See Update Log for details.")
                 else:
                     st.info("No new updates detected.")
-    with col2:
-        if st.button("Load regulations from CSV", use_container_width=True):
+    with qa2:
+        if st.button("Load regulations from CSV", use_container_width=True, key="home_load_csv"):
             try:
                 result = st.session_state.db.load_regulations_from_csv(SOURCES_FILE)
                 st.success(f"Loaded {result['loaded']} regulation(s); {result['skipped']} skipped.")
             except Exception as e:
                 st.error(f"Error: {str(e)}")
+
+
+def _render_app_footer():
+    """Site footer on every page: docs, contact, version (plain text — no hyperlinks)."""
+    contact_email = SMTP_EMAIL or "support@example.com"
+    st.markdown(
+        f"""
+        <footer class="app-footer" role="contentinfo" id="site-footer">
+            <span class="footer-item">Documentation</span>
+            <span class="footer-sep">·</span>
+            <span class="footer-item">Contact {contact_email}</span>
+            <span class="footer-sep">·</span>
+            <span class="footer-item">v{APP_VERSION}</span>
+        </footer>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 def show_ip_agent_page():
     """Main Intelligence Platform Agent page with integrated chat and compliance checker"""
@@ -406,8 +1123,6 @@ def show_ip_agent_page():
         })
         st.rerun()
     
-    st.header("💬 Ask anything about housing regulations")
-    
     # Display example questions as first message if chat is empty
     if len(st.session_state.chat_history) == 0:
         with st.chat_message("assistant"):
@@ -415,15 +1130,15 @@ def show_ip_agent_page():
             st.markdown("**Try one of these:**")
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("Updated law in Dallas", key="ex1", use_container_width=True):
-                    process_question("Updated law in Dallas")
+                if st.button("Recent housing law updates", key="ex1", use_container_width=True):
+                    process_question("What are the latest housing regulation updates in my area?")
                 if st.button("What is ESA?", key="ex2", use_container_width=True):
                     process_question("What is ESA?")
-                if st.button("ESA law in Austin", key="ex3", use_container_width=True):
-                    process_question("What is ESA law in Austin?")
+                if st.button("ESA rules for rentals", key="ex3", use_container_width=True):
+                    process_question("What are ESA rules for rental housing?")
             with col2:
-                if st.button("Rent control in Dallas", key="ex4", use_container_width=True):
-                    process_question("New rent control law in Dallas")
+                if st.button("Rent control overview", key="ex4", use_container_width=True):
+                    process_question("What should I know about rent control rules?")
                 if st.button("What is rent control?", key="ex5", use_container_width=True):
                     process_question("What is rent control?")
                 if st.button("Check a lease for compliance", key="ex6", use_container_width=True):
@@ -478,7 +1193,8 @@ def show_ip_agent_page():
                                 url = source.get('url', '')
                                 if url:
                                     if url.startswith('http'):
-                                        st.markdown(f"🔗 [{source.get('source', 'Unknown')}]({url})")
+                                        st.markdown(f"🔗 **{source.get('source', 'Unknown')}**")
+                                        st.markdown(f"`{url}`")
                                     elif os.path.exists(url):
                                         st.markdown(f"📄 {source.get('source', 'Unknown')}")
                                 else:
@@ -563,7 +1279,7 @@ def show_ip_agent_page():
                         
                         if not selected_city:
                             # Ask for city
-                            answer_text = "📍 **Which city are you checking compliance for?**\n\nPlease type the city name (Dallas, Houston, Austin, or San Antonio) in your next message, or select from the dropdown below."
+                            answer_text = "📍 **Which city are you checking compliance for?**\n\nSelect a city from the dropdown below, or type a supported city name in your next message."
                             st.markdown(answer_text)
                             city = st.selectbox("City", ["Select..."] + SUPPORTED_CITIES, key="compliance_city_select")
                             if city != "Select...":
@@ -799,18 +1515,26 @@ def show_ip_agent_page():
                     st.rerun()
 
 def show_regulation_explorer():
-    st.header("📚 Regulation Explorer")
-    st.caption("Search and browse housing regulations. Use the filters below to narrow by category, state, or city.")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        search_query = st.text_input("Search", placeholder="Keyword or topic...")
-    with col2:
-        category_filter = st.selectbox("Category", ["All"] + REGULATION_CATEGORIES)
-    with col3:
-        state_filter = st.selectbox("State", ["All"] + STATES)
-    with col4:
-        city_filter = st.selectbox("City", ["All"] + SUPPORTED_CITIES)
+    with st.container(border=True):
+        st.markdown("##### Filters")
+        st.caption("Combine search with category, state, and city. All filters apply together.")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            search_query = st.text_input(
+                "Search keywords",
+                placeholder="e.g. ESA, rent cap…",
+                key="rex_search",
+            )
+        with col2:
+            category_filter = st.selectbox(
+                "Category",
+                ["All"] + REGULATION_CATEGORIES,
+                key="rex_category",
+            )
+        with col3:
+            state_filter = st.selectbox("State", ["All"] + STATES, key="rex_state")
+        with col4:
+            city_filter = st.selectbox("City", ["All"] + SUPPORTED_CITIES, key="rex_city")
     
     # Get regulations
     regulations = st.session_state.db.get_all_regulations()
@@ -841,18 +1565,20 @@ def show_regulation_explorer():
             prioritize_reliable=True
         )
         if search_results:
-            st.subheader("Search Results")
+            st.subheader("Search Results", anchor=False)
             for result in search_results:
                 with st.expander(f"📄 {result['metadata'].get('source_name', 'Unknown')}"):
                     st.write(result['document'][:500])
-                    st.markdown(f"**URL**: {result['metadata'].get('url', 'N/A')}")
+                    _u = result["metadata"].get("url", "N/A")
+                    st.markdown("**URL:**")
+                    st.markdown(f"`{_u}`")
                     st.markdown(f"**Category**: {result['metadata'].get('category', 'N/A')}")
     
-    st.subheader("All regulations")
+    st.subheader("All regulations", anchor=False)
     
     if regulations:
         df = pd.DataFrame(regulations)
-        df['URL'] = df['url'].apply(lambda x: f"[Link]({x})" if x and x.startswith('http') else x)
+        df["URL"] = df["url"].apply(lambda x: x if x and str(x).startswith("http") else (x or ""))
         
         # Map source names for better display (same as Update Log)
         df['display_name'] = df['source_name'].apply(lambda x: 
@@ -900,7 +1626,7 @@ def show_regulation_explorer():
         st.info("No regulations found. Load regulations from CSV in Settings.")
 
 def show_compliance_checker():
-    st.header("Lease Compliance Checker")
+    st.header("Lease Compliance Checker", anchor=False)
     
     st.markdown("Upload a lease document (PDF or DOCX) to check for compliance with Texas housing regulations.")
     
@@ -930,12 +1656,12 @@ def show_compliance_checker():
                         st.error(f"❌ **NON-COMPLIANT**: Found {result['issues_found']} issue(s)")
                     
                     # Summary
-                    st.subheader("Summary")
+                    st.subheader("Summary", anchor=False)
                     st.markdown(result['summary'])
                     
                     # Issues with action items
                     if result['issues']:
-                        st.subheader("Compliance Issues & Action Items")
+                        st.subheader("Compliance Issues & Action Items", anchor=False)
                         for issue in result['issues']:
                             with st.expander(f"⚠️ Issue in Clause {issue['clause_number']}: {issue['clause_title'][:50]}"):
                                 st.markdown(f"**Clause Content:**")
@@ -976,7 +1702,7 @@ def show_compliance_checker():
                         
                         # General action items section
                         st.markdown("---")
-                        st.subheader("📋 General Action Items")
+                        st.subheader("📋 General Action Items", anchor=False)
                         st.markdown("""
                         **Documents to Update:**
                         - Lease agreement document
@@ -1011,9 +1737,6 @@ def show_compliance_checker():
                     st.error(f"Error checking compliance: {str(e)}")
 
 def show_update_log():
-    st.header("📢 Update Log")
-    st.caption("See when regulations changed. Use \"Check for updates\" to scan for new changes.")
-    
     if st.button("Check for updates now"):
         with st.spinner("Checking for updates..."):
             updates = st.session_state.update_checker.check_for_updates()
@@ -1025,7 +1748,7 @@ def show_update_log():
             else:
                 st.info("No new updates detected.")
     
-    st.subheader("Recent updates")
+    st.subheader("Recent updates", anchor=False)
     
     # Show count
     updates = st.session_state.db.get_recent_updates(limit=50)
@@ -1093,10 +1816,9 @@ def show_update_log():
             
             with st.expander(f"📢 {display_name} - {update['detected_at']}", expanded=False):
                 st.markdown(f"**Category:** {update.get('category', 'N/A')}")
-                if update.get('url') and update['url'].startswith('http'):
-                    st.markdown(f"**URL:** [{update['url']}]({update['url']})")
-                else:
-                    st.markdown(f"**URL:** {update.get('url', 'N/A')}")
+                _uu = update.get("url") or "N/A"
+                st.markdown("**URL:**")
+                st.markdown(f"`{_uu}`")
                 st.markdown(f"**Affected Cities:** {', '.join(affected_cities) if affected_cities else 'Texas-Statewide'}")
                 st.markdown("---")
                 st.markdown("**Update Summary:**")
@@ -1112,13 +1834,10 @@ def show_update_log():
             st.info("No updates recorded yet. Click 'Check for Updates' on the Home page to scan for changes.")
 
 def show_email_alerts():
-    st.header("📧 Email Alerts")
-    st.caption("Subscribe by city to get email when regulations change. Daily summaries and instant alerts.")
-    
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("Subscribe")
+        st.subheader("Subscribe", anchor=False)
         email = st.text_input("Email", placeholder="you@example.com", key="subscribe_email")
         city = st.selectbox("City", SUPPORTED_CITIES, key="subscribe_city")
         if st.button("Subscribe", type="primary"):
@@ -1134,7 +1853,7 @@ def show_email_alerts():
                 st.error("Please enter a valid email address.")
     
     with col2:
-        st.subheader("Unsubscribe")
+        st.subheader("Unsubscribe", anchor=False)
         unsubscribe_email = st.text_input("Email", placeholder="you@example.com", key="unsubscribe_email")
         unsubscribe_city = st.selectbox("City", SUPPORTED_CITIES, key="unsubscribe_city")
         
@@ -1149,7 +1868,7 @@ def show_email_alerts():
                 st.error("Please enter a valid email address.")
         
         st.markdown("---")
-        st.subheader("View subscriptions")
+        st.subheader("View subscriptions", anchor=False)
         view_email = st.text_input("Email", placeholder="you@example.com", key="view_email")
         if st.button("View subscriptions"):
             if view_email and "@" in view_email:
@@ -1162,7 +1881,7 @@ def show_email_alerts():
                     st.info("No active subscriptions found for this email.")
         
         st.markdown("---")
-        st.subheader("Daily summaries")
+        st.subheader("Daily summaries", anchor=False)
         st.caption("Subscribers get a daily email at 9:00 AM with updates for their cities.")
         if st.button("Send test daily summary", help="Send a test summary to all subscribers"):
             with st.spinner("Sending daily summaries..."):
@@ -1173,10 +1892,7 @@ def show_email_alerts():
                     st.info("No active subscriptions found. Subscribe to a city first to receive daily summaries.")
 
 def show_settings():
-    st.header("⚙️ Settings")
-    st.caption("Load regulations from CSV, re-index the database, or run an update check.")
-    
-    st.subheader("Data & indexing")
+    st.subheader("Data & indexing", anchor=False)
     
     col1, col2 = st.columns(2)
     
@@ -1261,7 +1977,7 @@ def show_settings():
                 st.success(f"✅ Re-indexed {indexed} regulations!")
         
         st.markdown("---")
-        st.subheader("Daily scraping")
+        st.subheader("Daily scraping", anchor=False)
         st.caption("Runs at 9:00 AM daily. Use the button below to run now.")
         if st.button("Run update check now"):
             with st.spinner("Checking for updates..."):
@@ -1277,7 +1993,7 @@ def show_settings():
                     st.info("No new updates detected.")
     
     with col2:
-        st.subheader("Configuration")
+        st.subheader("Configuration", anchor=False)
         st.caption("OpenAI key and SMTP in `.env`. Data: SQLite (regulations.db), ChromaDB (./chroma_db). Run `python daily_scraper.py` for daily updates.")
     
     st.markdown("---")
